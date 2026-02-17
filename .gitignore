@@ -1,0 +1,48 @@
+# Delphi compiled units
+*.dcu
+*.exe
+*.dll
+*.bpl
+*.bpi
+*.dcp
+*.so
+*.dylib
+*.drc
+*.map
+*.dres
+*.rsm
+*.tds
+*.dsk
+*.identcache
+*.local
+*.stat
+*.cfg
+*.dof
+
+# Build output
+build/
+Win32/
+Win64/
+Linux64/
+OSX64/
+__history/
+__recovery/
+
+# IDE files
+*.dproj.local
+*.groupproj.local
+
+# Test results
+dunitx-results.xml
+TEST-*.xml
+
+# Personal/local files
+CLAUDE.md
+PLAN.md
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+nul
