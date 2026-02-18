@@ -15,10 +15,10 @@ type
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function SendDraft(const MessageId: string): Boolean;
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;

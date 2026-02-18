@@ -18,7 +18,7 @@ type
     function BuildRecipientArray(const Recipients: TArray<string>): TJSONArray;
     function BuildMessageBody(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const IsHtml: Boolean): TJSONObject;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
     function MessageEndpoint(const MessageId: string): string;
 
     function EndpointMessages: string;
@@ -48,10 +48,10 @@ type
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function SendDraft(const MessageId: string): Boolean;
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;
@@ -104,7 +104,7 @@ end;
 
 function TMailClient.BuildMessageBody(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-  const IsHtml: Boolean): TJSONObject;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('subject', Subject);
@@ -122,6 +122,10 @@ begin
   const HasCcRecipients = (Length(CcRecipients) > 0);
   if HasCcRecipients then
     Result.AddPair('ccRecipients', BuildRecipientArray(CcRecipients));
+
+  const HasBccRecipients = (Length(BccRecipients) > 0);
+  if HasBccRecipients then
+    Result.AddPair('bccRecipients', BuildRecipientArray(BccRecipients));
 end;
 
 function TMailClient.EndpointMessages: string;
@@ -361,7 +365,7 @@ end;
 
 function TMailClient.CreateDraft(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-  const IsHtml: Boolean): TDraftResult;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
   Result := Default(TDraftResult);
   var Signature := GetMailboxSignature;
@@ -376,7 +380,7 @@ begin
       FinalBody := FinalBody + #13#10#13#10 + Signature;
   end;
 
-  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, BccRecipients, IsHtml);
   try
     var DraftEndpoint: string;
     if FGraphClient.IsSharedMailbox then
@@ -400,10 +404,10 @@ end;
 
 function TMailClient.UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-  const IsHtml: Boolean): TDraftResult;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
   Result := Default(TDraftResult);
-  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml);
   try
     var Response := FGraphClient.Patch(MessageEndpoint(MessageId), MessageObj.ToJSON);
     try
