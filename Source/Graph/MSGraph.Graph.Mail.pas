@@ -55,6 +55,8 @@ type
     function SendDraft(const MessageId: string): Boolean;
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;
+    function CreateReplyDraft(const MessageId: string; const Body: string;
+      const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
 
@@ -441,6 +443,101 @@ begin
   finally
     Response.Free;
   end;
+end;
+
+function TMailClient.CreateReplyDraft(const MessageId: string; const Body: string;
+  const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+
+  function FormatRecipients(const Recipients: TArray<TEmailAddress>): string;
+  begin
+    Result := '';
+    for var Index := 0 to High(Recipients) do
+    begin
+      if Index > 0 then
+        Result := Result + '; ';
+      if not Recipients[Index].Name.IsEmpty then
+        Result := Result + Recipients[Index].Name + ' &lt;' + Recipients[Index].Address + '&gt;'
+      else
+        Result := Result + Recipients[Index].Address;
+    end;
+  end;
+
+  function BuildQuotedOriginal(const Original: TMailMessage): string;
+  begin
+    Result :=
+      '<hr style="display:inline-block;width:98%">' +
+      '<div id="divRplyFwdMsg" dir="ltr">' +
+      '<font face="Calibri, sans-serif" color="#000000" style="font-size:11pt">' +
+      '<b>From:</b> ' + FormatRecipients([Original.From]) + '<br>' +
+      '<b>Sent:</b> ' + Original.ReceivedDateTime + '<br>' +
+      '<b>To:</b> ' + FormatRecipients(Original.ToRecipients) + '<br>';
+    const HasCc = (Length(Original.CcRecipients) > 0);
+    if HasCc then
+      Result := Result + '<b>Cc:</b> ' + FormatRecipients(Original.CcRecipients) + '<br>';
+    Result := Result +
+      '<b>Subject:</b> ' + Original.Subject +
+      '</font><br><br>' + Original.Body + '</div>';
+  end;
+
+begin
+  Result := Default(TDraftResult);
+
+  var OriginalMessage := GetMessage(MessageId);
+
+  var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/createReply', '{}');
+  try
+    if TGraphJson.HasError(Response) then
+      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+
+    Result.Id := TGraphJson.GetString(Response, 'id');
+  finally
+    Response.Free;
+  end;
+
+  var DraftMessage := GetMessage(Result.Id);
+
+  var CombinedBody: string;
+  if IsHtml then
+    CombinedBody := Body + BuildQuotedOriginal(OriginalMessage)
+  else
+    CombinedBody := Body + #13#10#13#10 + '---' + #13#10 +
+      'From: ' + OriginalMessage.From.Address + #13#10 +
+      'Subject: ' + OriginalMessage.Subject + #13#10#13#10 +
+      OriginalMessage.Body;
+
+  var ToAddresses: TArray<string>;
+  SetLength(ToAddresses, Length(DraftMessage.ToRecipients));
+  for var Index := 0 to High(DraftMessage.ToRecipients) do
+    ToAddresses[Index] := DraftMessage.ToRecipients[Index].Address;
+
+  var ExistingCc: TArray<string>;
+  SetLength(ExistingCc, Length(DraftMessage.CcRecipients));
+  for var Index := 0 to High(DraftMessage.CcRecipients) do
+    ExistingCc[Index] := DraftMessage.CcRecipients[Index].Address;
+
+  var MergedCc := ExistingCc;
+  for var NewCc in CcRecipients do
+  begin
+    var AlreadyExists := False;
+    for var Existing in MergedCc do
+    begin
+      if Existing.ToLower = NewCc.ToLower then
+      begin
+        AlreadyExists := True;
+        Break;
+      end;
+    end;
+    if not AlreadyExists then
+    begin
+      SetLength(MergedCc, Length(MergedCc) + 1);
+      MergedCc[High(MergedCc)] := NewCc;
+    end;
+  end;
+
+  UpdateDraft(Result.Id, DraftMessage.Subject, CombinedBody,
+    ToAddresses, MergedCc, [], IsHtml);
+
+  Result.Subject := DraftMessage.Subject;
 end;
 
 function TMailClient.MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;

@@ -47,6 +47,7 @@ type
 
   TDraftResult = record
     Id: string;
+    Subject: string;
   end;
 
   TMoveMessageResult = record

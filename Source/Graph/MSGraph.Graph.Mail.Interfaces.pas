@@ -22,6 +22,8 @@ type
     function SendDraft(const MessageId: string): Boolean;
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;
+    function CreateReplyDraft(const MessageId: string; const Body: string;
+      const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
   end;
