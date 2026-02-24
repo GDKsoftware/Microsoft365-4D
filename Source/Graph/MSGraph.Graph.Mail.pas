@@ -479,65 +479,96 @@ function TMailClient.CreateReplyDraft(const MessageId: string; const Body: strin
       '</font><br><br>' + Original.Body + '</div>';
   end;
 
+  function BuildCreateReplyBody(const CombinedBody: string; const ContentType: string): TJSONObject;
+  begin
+    Result := TJSONObject.Create;
+    var MessageObj := TJSONObject.Create;
+    var BodyObj := TJSONObject.Create;
+    BodyObj.AddPair('contentType', ContentType);
+    BodyObj.AddPair('content', CombinedBody);
+    MessageObj.AddPair('body', BodyObj);
+    Result.AddPair('message', MessageObj);
+  end;
+
 begin
   Result := Default(TDraftResult);
 
   var OriginalMessage := GetMessage(MessageId);
 
-  var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/createReply', '{}');
-  try
-    if TGraphJson.HasError(Response) then
-      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-
-    Result.Id := TGraphJson.GetString(Response, 'id');
-  finally
-    Response.Free;
-  end;
-
-  var DraftMessage := GetMessage(Result.Id);
-
   var CombinedBody: string;
+  var ContentType: string;
   if IsHtml then
-    CombinedBody := Body + BuildQuotedOriginal(OriginalMessage)
+  begin
+    CombinedBody := Body + BuildQuotedOriginal(OriginalMessage);
+    ContentType := ContentTypeHtml;
+  end
   else
+  begin
     CombinedBody := Body + #13#10#13#10 + '---' + #13#10 +
       'From: ' + OriginalMessage.From.Address + #13#10 +
       'Subject: ' + OriginalMessage.Subject + #13#10#13#10 +
       OriginalMessage.Body;
-
-  var ToAddresses: TArray<string>;
-  SetLength(ToAddresses, Length(DraftMessage.ToRecipients));
-  for var Index := 0 to High(DraftMessage.ToRecipients) do
-    ToAddresses[Index] := DraftMessage.ToRecipients[Index].Address;
-
-  var ExistingCc: TArray<string>;
-  SetLength(ExistingCc, Length(DraftMessage.CcRecipients));
-  for var Index := 0 to High(DraftMessage.CcRecipients) do
-    ExistingCc[Index] := DraftMessage.CcRecipients[Index].Address;
-
-  var MergedCc := ExistingCc;
-  for var NewCc in CcRecipients do
-  begin
-    var AlreadyExists := False;
-    for var Existing in MergedCc do
-    begin
-      if Existing.ToLower = NewCc.ToLower then
-      begin
-        AlreadyExists := True;
-        Break;
-      end;
-    end;
-    if not AlreadyExists then
-    begin
-      SetLength(MergedCc, Length(MergedCc) + 1);
-      MergedCc[High(MergedCc)] := NewCc;
-    end;
+    ContentType := ContentTypeText;
   end;
 
-  UpdateDraft(Result.Id, DraftMessage.Subject, CombinedBody,
-    ToAddresses, MergedCc, [], IsHtml);
+  var RequestBody := BuildCreateReplyBody(CombinedBody, ContentType);
+  try
+    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/createReply', RequestBody.ToJSON);
+    try
+      if TGraphJson.HasError(Response) then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
 
-  Result.Subject := DraftMessage.Subject;
+      Result.Id := TGraphJson.GetString(Response, 'id');
+      Result.Subject := TGraphJson.GetString(Response, 'subject');
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestBody.Free;
+  end;
+
+  const HasAdditionalCc = (Length(CcRecipients) > 0);
+  if HasAdditionalCc then
+  begin
+    var DraftMessage := GetMessage(Result.Id);
+
+    var MergedCc: TArray<string>;
+    SetLength(MergedCc, Length(DraftMessage.CcRecipients));
+    for var Index := 0 to High(DraftMessage.CcRecipients) do
+      MergedCc[Index] := DraftMessage.CcRecipients[Index].Address;
+
+    for var NewCc in CcRecipients do
+    begin
+      var AlreadyExists := False;
+      for var Existing in MergedCc do
+      begin
+        if Existing.ToLower = NewCc.ToLower then
+        begin
+          AlreadyExists := True;
+          Break;
+        end;
+      end;
+      if not AlreadyExists then
+      begin
+        SetLength(MergedCc, Length(MergedCc) + 1);
+        MergedCc[High(MergedCc)] := NewCc;
+      end;
+    end;
+
+    var PatchObj := TJSONObject.Create;
+    try
+      PatchObj.AddPair('ccRecipients', BuildRecipientArray(MergedCc));
+      var PatchResponse := FGraphClient.Patch(MessageEndpoint(Result.Id), PatchObj.ToJSON);
+      try
+        if TGraphJson.HasError(PatchResponse) then
+          raise EGraphApiException.Create(TGraphJson.GetErrorMessage(PatchResponse));
+      finally
+        PatchResponse.Free;
+      end;
+    finally
+      PatchObj.Free;
+    end;
+  end;
 end;
 
 function TMailClient.MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
