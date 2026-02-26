@@ -8,6 +8,12 @@ uses
   MSGraph.OAuth2.Types;
 
 type
+  TUserProfile = record
+    Mail: string;
+    UserPrincipalName: string;
+    DisplayName: string;
+  end;
+
   TGraphHttpClient = class
   strict private
     FAccessToken: string;
@@ -52,6 +58,8 @@ type
     procedure SetAccessToken(const Value: string);
     function GetAccessToken: string;
 
+    function GetUserProfile: TUserProfile;
+
     property MailboxAddress: string read FMailboxAddress write FMailboxAddress;
   end;
 
@@ -61,7 +69,8 @@ uses
   System.SysUtils,
   System.Classes,
   System.NetEncoding,
-  System.Net.HttpClient;
+  System.Net.HttpClient,
+  MSGraph.Graph.JsonHelper;
 
 constructor TGraphHttpClient.Create(const AccessToken: string; const LogProc: TLogProc);
 begin
@@ -284,6 +293,21 @@ end;
 function TGraphHttpClient.GetAccessToken: string;
 begin
   Result := FAccessToken;
+end;
+
+function TGraphHttpClient.GetUserProfile: TUserProfile;
+begin
+  Result := Default(TUserProfile);
+  var Response := Get(GetUserPrefix, '$select=mail,userPrincipalName,displayName');
+  try
+    if TGraphJson.HasError(Response) then
+      Exit;
+    Result.Mail := TGraphJson.GetString(Response, 'mail');
+    Result.UserPrincipalName := TGraphJson.GetString(Response, 'userPrincipalName');
+    Result.DisplayName := TGraphJson.GetString(Response, 'displayName');
+  finally
+    Response.Free;
+  end;
 end;
 
 end.

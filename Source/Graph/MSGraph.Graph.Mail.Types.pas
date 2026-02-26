@@ -20,6 +20,8 @@ type
     Body: string;
     BodyType: string;
     BodyPreview: string;
+    Importance: string;
+    ParentFolderId: string;
   end;
 
   TMailAttachment = record

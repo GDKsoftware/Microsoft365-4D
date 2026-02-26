@@ -59,6 +59,8 @@ type
       const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
+    function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
+      const Skip: Integer = 0): TSearchMessagesResult;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -185,6 +187,8 @@ begin
   Result.IsRead := TGraphJson.GetBool(MsgObj, 'isRead');
   Result.HasAttachments := TGraphJson.GetBool(MsgObj, 'hasAttachments');
   Result.BodyPreview := TGraphJson.GetString(MsgObj, 'bodyPreview');
+  Result.Importance := TGraphJson.GetString(MsgObj, 'importance');
+  Result.ParentFolderId := TGraphJson.GetString(MsgObj, 'parentFolderId');
 
   var BodyObj := TGraphJson.GetObject(MsgObj, 'body');
   if not Assigned(BodyObj) then
@@ -222,7 +226,7 @@ end;
 class function TMailClient.BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
   const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string;
 begin
-  Result := '$select=id,subject,from,toRecipients,receivedDateTime,isRead,hasAttachments,bodyPreview';
+  Result := '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,bodyPreview,importance,parentFolderId';
 
   const IncludeBody = (ActualTop <= 5);
   if IncludeBody then
@@ -300,7 +304,7 @@ end;
 function TMailClient.GetMessage(const MessageId: string; const IncludeBody: Boolean): TMailMessage;
 begin
   var Response := FGraphClient.Get(MessageEndpoint(MessageId),
-    '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview');
+    '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview,importance,parentFolderId');
   try
     if TGraphJson.HasError(Response) then
       raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
@@ -646,6 +650,47 @@ begin
     SetLength(Result, ValueArray.Count);
     for var Index := 0 to ValueArray.Count - 1 do
       Result[Index] := ParseFolder(TGraphJson.ArrayItem(ValueArray, Index));
+  finally
+    Response.Free;
+  end;
+end;
+
+function TMailClient.ListFolderMessages(const FolderId: string;
+  const Top: Integer; const Skip: Integer): TSearchMessagesResult;
+const
+  SelectFields = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
+    'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
+begin
+  Result := Default(TSearchMessagesResult);
+
+  var Endpoint: string;
+  if not FolderId.IsEmpty then
+    Endpoint := EndpointMailFolders + '/' + TNetEncoding.URL.Encode(FolderId) + '/messages'
+  else
+    Endpoint := EndpointMessages;
+
+  var QueryParams := '$select=' + SelectFields +
+    '&$orderby=receivedDateTime desc' +
+    '&$top=' + Top.ToString;
+
+  const HasSkip = (Skip > 0);
+  if HasSkip then
+    QueryParams := QueryParams + '&$skip=' + Skip.ToString;
+
+  var Response := FGraphClient.Get(Endpoint, QueryParams);
+  try
+    if TGraphJson.HasError(Response) then
+      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+
+    var ValueArray := TGraphJson.GetArray(Response, 'value');
+    if not Assigned(ValueArray) then
+      Exit;
+
+    SetLength(Result.Messages, ValueArray.Count);
+    for var Index := 0 to ValueArray.Count - 1 do
+      Result.Messages[Index] := ParseMessage(TGraphJson.ArrayItem(ValueArray, Index));
+
+    Result.HasMore := (Length(Result.Messages) >= Top) or TGraphJson.HasNextPage(Response);
   finally
     Response.Free;
   end;

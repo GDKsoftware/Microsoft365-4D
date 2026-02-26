@@ -26,6 +26,8 @@ type
       const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
+    function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
+      const Skip: Integer = 0): TSearchMessagesResult;
   end;
 
 implementation
