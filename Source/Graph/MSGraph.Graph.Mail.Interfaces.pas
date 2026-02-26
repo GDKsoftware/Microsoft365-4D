@@ -23,7 +23,8 @@ type
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;
     function CreateReplyDraft(const MessageId: string; const Body: string;
-      const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+      const CcRecipients: TArray<string>; const IsHtml: Boolean;
+      const ReplyAll: Boolean = True): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;

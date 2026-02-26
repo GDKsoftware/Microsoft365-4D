@@ -215,7 +215,7 @@ begin
     else
       raise EGraphApiException.Create('Unsupported HTTP method: ' + Method);
 
-    Result := ParseResponse(Response.StatusCode, Response.ContentAsString);
+    Result := ParseResponse(Response.StatusCode, Response.ContentAsString(TEncoding.UTF8));
   finally
     HttpClient.Free;
   end;

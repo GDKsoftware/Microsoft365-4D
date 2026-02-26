@@ -56,7 +56,8 @@ type
     function DeleteDraft(const MessageId: string): Boolean;
     function GetMailboxSignature: string;
     function CreateReplyDraft(const MessageId: string; const Body: string;
-      const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+      const CcRecipients: TArray<string>; const IsHtml: Boolean;
+      const ReplyAll: Boolean = True): TDraftResult;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
@@ -450,7 +451,8 @@ begin
 end;
 
 function TMailClient.CreateReplyDraft(const MessageId: string; const Body: string;
-  const CcRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+  const CcRecipients: TArray<string>; const IsHtml: Boolean;
+  const ReplyAll: Boolean = True): TDraftResult;
 
   function FormatRecipients(const Recipients: TArray<TEmailAddress>): string;
   begin
@@ -517,7 +519,12 @@ begin
 
   var RequestBody := BuildCreateReplyBody(CombinedBody, ContentType);
   try
-    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/createReply', RequestBody.ToJSON);
+    var Endpoint: string;
+    if ReplyAll then
+      Endpoint := MessageEndpoint(MessageId) + '/createReplyAll'
+    else
+      Endpoint := MessageEndpoint(MessageId) + '/createReply';
+    var Response := FGraphClient.Post(Endpoint, RequestBody.ToJSON);
     try
       if TGraphJson.HasError(Response) then
         raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
