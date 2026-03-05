@@ -62,6 +62,8 @@ type
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
       const Skip: Integer = 0): TSearchMessagesResult;
+    function ForwardMessage(const MessageId, Comment: string;
+      const Recipients: TArray<string>): Boolean;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -700,6 +702,27 @@ begin
     Result.HasMore := (Length(Result.Messages) >= Top) or TGraphJson.HasNextPage(Response);
   finally
     Response.Free;
+  end;
+end;
+
+function TMailClient.ForwardMessage(const MessageId, Comment: string;
+  const Recipients: TArray<string>): Boolean;
+begin
+  var RequestBody := TJSONObject.Create;
+  try
+    RequestBody.AddPair('comment', Comment);
+    RequestBody.AddPair('toRecipients', BuildRecipientArray(Recipients));
+
+    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/forward', RequestBody.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestBody.Free;
   end;
 end;
 

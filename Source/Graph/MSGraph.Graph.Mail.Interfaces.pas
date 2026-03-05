@@ -29,6 +29,8 @@ type
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
       const Skip: Integer = 0): TSearchMessagesResult;
+    function ForwardMessage(const MessageId, Comment: string;
+      const Recipients: TArray<string>): Boolean;
   end;
 
 implementation
