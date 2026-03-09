@@ -3,6 +3,7 @@ unit MSGraph.Graph.Mail;
 interface
 
 uses
+  System.SysUtils,
   System.JSON,
   MSGraph.OAuth2.Types,
   MSGraph.Graph.Http,
@@ -65,6 +66,9 @@ type
     function ForwardMessage(const MessageId, Comment: string;
       const Recipients: TArray<string>): Boolean;
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
+    function AddAttachment(const MessageId, FileName, ContentType: string;
+      const ContentBytes: TBytes): Boolean;
+    function GetMessageMimeContent(const MessageId: string): TBytes;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -72,7 +76,6 @@ type
 implementation
 
 uses
-  System.SysUtils,
   System.NetEncoding,
   MSGraph.Graph.JsonHelper;
 
@@ -722,6 +725,34 @@ begin
   finally
     RequestBody.Free;
   end;
+end;
+
+function TMailClient.AddAttachment(const MessageId, FileName, ContentType: string;
+  const ContentBytes: TBytes): Boolean;
+begin
+  var AttachmentObj := TJSONObject.Create;
+  try
+    AttachmentObj.AddPair('@odata.type', '#microsoft.graph.fileAttachment');
+    AttachmentObj.AddPair('name', FileName);
+    AttachmentObj.AddPair('contentType', ContentType);
+    AttachmentObj.AddPair('contentBytes', TNetEncoding.Base64.EncodeBytesToString(ContentBytes));
+
+    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/attachments', AttachmentObj.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    AttachmentObj.Free;
+  end;
+end;
+
+function TMailClient.GetMessageMimeContent(const MessageId: string): TBytes;
+begin
+  Result := FGraphClient.GetRawBytes(MessageEndpoint(MessageId) + '/$value');
 end;
 
 function TMailClient.ForwardMessage(const MessageId, Comment: string;

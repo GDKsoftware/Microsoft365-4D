@@ -3,6 +3,7 @@ unit MSGraph.Graph.Http;
 interface
 
 uses
+  System.SysUtils,
   System.JSON,
   System.Net.URLClient,
   MSGraph.OAuth2.Types;
@@ -45,6 +46,7 @@ type
     constructor Create(const AccessToken: string; const LogProc: TLogProc = nil);
 
     function Get(const Endpoint: string; const QueryParams: string = ''): TJSONObject;
+    function GetRawBytes(const Endpoint: string): TBytes;
     function Post(const Endpoint: string; const Body: string = ''): TJSONObject;
     function Patch(const Endpoint: string; const Body: string): TJSONObject;
     function Delete(const Endpoint: string): TJSONObject;
@@ -66,7 +68,6 @@ type
 implementation
 
 uses
-  System.SysUtils,
   System.Classes,
   System.NetEncoding,
   System.Net.HttpClient,
@@ -226,6 +227,36 @@ begin
   var Url := BuildUrl(Endpoint, QueryParams);
   Log(LogDebug, MethodGet + ' ' + Url);
   Result := ExecuteRequest(MethodGet, Url);
+end;
+
+function TGraphHttpClient.GetRawBytes(const Endpoint: string): TBytes;
+begin
+  ValidateAccessToken;
+
+  var Url := BuildUrl(Endpoint);
+  Log(LogDebug, MethodGet + ' ' + Url + ' (raw)');
+
+  var HttpClient := THTTPClient.Create;
+  try
+    var ResponseStream := TBytesStream.Create;
+    try
+      var Headers: TArray<TNetHeader>;
+      SetLength(Headers, 1);
+      Headers[0] := TNetHeader.Create(HeaderAuthorization, BearerPrefix + FAccessToken);
+
+      var Response := HttpClient.Get(Url, ResponseStream, Headers);
+      const IsSuccess = (Response.StatusCode >= 200) and (Response.StatusCode < 300);
+      if not IsSuccess then
+        raise EGraphApiException.Create(Format('HTTP %d fetching raw content', [Response.StatusCode]));
+
+      Result := ResponseStream.Bytes;
+      SetLength(Result, ResponseStream.Size);
+    finally
+      ResponseStream.Free;
+    end;
+  finally
+    HttpClient.Free;
+  end;
 end;
 
 function TGraphHttpClient.GetWithHeaders(const Endpoint: string; const QueryParams: string;

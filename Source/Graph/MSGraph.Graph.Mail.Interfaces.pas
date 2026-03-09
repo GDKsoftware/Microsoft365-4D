@@ -3,6 +3,7 @@ unit MSGraph.Graph.Mail.Interfaces;
 interface
 
 uses
+  System.SysUtils,
   MSGraph.Graph.Mail.Types;
 
 type
@@ -32,6 +33,9 @@ type
     function ForwardMessage(const MessageId, Comment: string;
       const Recipients: TArray<string>): Boolean;
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
+    function AddAttachment(const MessageId, FileName, ContentType: string;
+      const ContentBytes: TBytes): Boolean;
+    function GetMessageMimeContent(const MessageId: string): TBytes;
   end;
 
 implementation
