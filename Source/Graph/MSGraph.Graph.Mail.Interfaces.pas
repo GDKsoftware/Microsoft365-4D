@@ -31,6 +31,7 @@ type
       const Skip: Integer = 0): TSearchMessagesResult;
     function ForwardMessage(const MessageId, Comment: string;
       const Recipients: TArray<string>): Boolean;
+    function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
   end;
 
 implementation

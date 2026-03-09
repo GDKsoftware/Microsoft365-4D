@@ -64,6 +64,7 @@ type
       const Skip: Integer = 0): TSearchMessagesResult;
     function ForwardMessage(const MessageId, Comment: string;
       const Recipients: TArray<string>): Boolean;
+    function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -702,6 +703,24 @@ begin
     Result.HasMore := (Length(Result.Messages) >= Top) or TGraphJson.HasNextPage(Response);
   finally
     Response.Free;
+  end;
+end;
+
+function TMailClient.MarkMessageAsRead(const MessageId: string; const IsRead: Boolean): Boolean;
+begin
+  var RequestBody := TJSONObject.Create;
+  try
+    RequestBody.AddPair('isRead', TJSONBool.Create(IsRead));
+    var Response := FGraphClient.Patch(MessageEndpoint(MessageId), RequestBody.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestBody.Free;
   end;
 end;
 
