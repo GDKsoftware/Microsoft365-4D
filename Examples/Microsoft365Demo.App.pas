@@ -5,7 +5,11 @@ interface
 uses
   MSGraph.OAuth2.Types,
   MSGraph.OAuth2.Client,
-  MSGraph.OAuth2.TokenStore;
+  MSGraph.OAuth2.TokenStore,
+  Classes,
+  IOUtils,
+  NetEncoding,
+  MSGraph.Graph.Http;
 
 type
   TDemoApp = class
@@ -28,11 +32,14 @@ type
     procedure DoSearchContacts;
     procedure DoListSites;
     procedure DoRefreshToken;
+  private
+    FAppMode: Boolean;
+    FAppModeUser: string;
   public
     constructor Create(const Config: TOAuth2Config);
     destructor Destroy; override;
 
-    procedure Run;
+    procedure Run(const AppMode: Boolean = false; const AppModeUser: string = '');
   end;
 
 implementation
@@ -103,55 +110,65 @@ end;
 procedure TDemoApp.DoAuthenticate;
 begin
   Writeln;
-  Writeln('Starting OAuth2 authentication flow...');
+  Writeln('Starting Application authentication flow...');
 
-  var PKCESession := TOAuth2PKCE.Generate;
-  FTokenStore.StorePKCESession(PKCESession);
-
-  var AuthUrl := FOAuthClient.GenerateAuthorizationUrl(PKCESession);
-
-  var CallbackServer := TCallbackServer.Create(FConfig.Port);
-  try
-    CallbackServer.Start;
-    Writeln('Callback server listening on http://localhost:', FConfig.Port, '/oauth/callback');
-    Writeln('Opening browser for Microsoft login...');
-
-{$IFDEF MSWINDOWS}
-    ShellExecute(0, 'open', PChar(AuthUrl), nil, nil, 1);
-{$ENDIF}
-{$IFDEF POSIX}
-    _system(PAnsiChar(AnsiString('xdg-open "' + AuthUrl + '" &')));
-{$ENDIF}
-    Writeln('Waiting for callback (timeout: 2 minutes)...');
-
-    const Received = CallbackServer.WaitForCallback(120000);
-    if not Received then
-    begin
-      Writeln('ERROR: Timed out waiting for callback.');
-      Exit;
-    end;
-
-    const HasError = not CallbackServer.Error.IsEmpty;
-    if HasError then
-    begin
-      Writeln('ERROR: ', CallbackServer.Error);
-      Exit;
-    end;
-
-    var StoredSession := FTokenStore.RetrievePKCESession(CallbackServer.State);
-    FTokenStore.DeletePKCESession(CallbackServer.State);
-
-    Writeln('Exchanging code for tokens...');
-    var Tokens := FOAuthClient.ExchangeCodeForToken(CallbackServer.Code, StoredSession.CodeVerifier);
+  if FAppMode then
+  begin
+    var Tokens := FOAuthClient.ClientCredentialsToken;
     FTokenStore.StoreTokens(Tokens);
+  end
+  else
+  begin
+    Writeln('Starting OAuth2 authentication flow...');
 
-    Writeln;
-    Writeln('Authentication successful!');
-    Writeln('  Expires in:  ', Tokens.ExpiresIn, 's');
-    Writeln('  Scopes:      ', Tokens.Scope);
-  finally
-    CallbackServer.Stop;
-    CallbackServer.Free;
+    var PKCESession := TOAuth2PKCE.Generate;
+    FTokenStore.StorePKCESession(PKCESession);
+
+    var AuthUrl := FOAuthClient.GenerateAuthorizationUrl(PKCESession);
+
+    var CallbackServer := TCallbackServer.Create(FConfig.Port);
+    try
+      CallbackServer.Start;
+      Writeln('Callback server listening on http://localhost:', FConfig.Port, '/oauth/callback');
+      Writeln('Opening browser for Microsoft login...');
+
+  {$IFDEF MSWINDOWS}
+      ShellExecute(0, 'open', PChar(AuthUrl), nil, nil, 1);
+  {$ENDIF}
+  {$IFDEF POSIX}
+      _system(PAnsiChar(AnsiString('xdg-open "' + AuthUrl + '" &')));
+  {$ENDIF}
+      Writeln('Waiting for callback (timeout: 2 minutes)...');
+
+      const Received = CallbackServer.WaitForCallback(120000);
+      if not Received then
+      begin
+        Writeln('ERROR: Timed out waiting for callback.');
+        Exit;
+      end;
+
+      const HasError = not CallbackServer.Error.IsEmpty;
+      if HasError then
+      begin
+        Writeln('ERROR: ', CallbackServer.Error);
+        Exit;
+      end;
+
+      var StoredSession := FTokenStore.RetrievePKCESession(CallbackServer.State);
+      FTokenStore.DeletePKCESession(CallbackServer.State);
+
+      Writeln('Exchanging code for tokens...');
+      var Tokens := FOAuthClient.ExchangeCodeForToken(CallbackServer.Code, StoredSession.CodeVerifier);
+      FTokenStore.StoreTokens(Tokens);
+
+      Writeln;
+      Writeln('Authentication successful!');
+      Writeln('  Expires in:  ', Tokens.ExpiresIn, 's');
+      Writeln('  Scopes:      ', Tokens.Scope);
+    finally
+      CallbackServer.Stop;
+      CallbackServer.Free;
+    end;
   end;
 end;
 
@@ -167,6 +184,8 @@ begin
 
   var Mail := TMailClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Mail.GraphClient.MailboxAddress := FAppModeUser;
     var SearchResult := Mail.SearchMessages(Query, '', 20, 0);
 
     if Length(SearchResult.Messages) = 0 then
@@ -207,6 +226,8 @@ begin
 
   var Mail := TMailClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Mail.GraphClient.MailboxAddress := FAppModeUser;
     var Msg := Mail.GetMessage(MessageId);
 
     PrintSeparator;
@@ -214,6 +235,16 @@ begin
     Writeln('Date:    ', Msg.ReceivedDateTime);
     Writeln('Body:    ', Msg.Body.Substring(0, 500));
     PrintSeparator;
+
+    for var Att in Mail.GetMessageAttachments(MessageId) do
+    begin
+      if Att.IsInline then
+        Continue;
+      var AttWithContent := Mail.GetAttachmentContent(MessageId, Att.Id);
+      var ContentBytes := TNetEncoding.Base64.DecodeStringToBytes(AttWithContent.ContentBytes);
+      TFile.WriteAllBytes(Format('d:\temp\att\%s', [Att.Name]), ContentBytes);
+    end;
+
   finally
     Mail.Free;
   end;
@@ -239,8 +270,10 @@ begin
 
   var Mail := TMailClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Mail.GraphClient.MailboxAddress := FAppModeUser;
     Writeln('Creating draft...');
-    var Draft := Mail.CreateDraft(Subject, Body, TArray<string>.Create(ToAddress), nil, False);
+    var Draft := Mail.CreateDraft(Subject, Body, TArray<string>.Create(ToAddress), nil, nil, False);
 
     Writeln('Sending...');
     if Mail.SendDraft(Draft.Id) then
@@ -258,6 +291,8 @@ begin
 
   var Mail := TMailClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Mail.GraphClient.MailboxAddress := FAppModeUser;
     var Folders := Mail.ListMailFolders;
 
     if Length(Folders) = 0 then
@@ -286,6 +321,8 @@ begin
 
   var Calendar := TCalendarClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Calendar.GraphClient.MailboxAddress := FAppModeUser;
     var Events := Calendar.ListEvents(Now, Now + Days, 20, 'Europe/Amsterdam');
 
     if Length(Events) = 0 then
@@ -330,6 +367,8 @@ begin
 
   var Calendar := TCalendarClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Calendar.GraphClient.MailboxAddress := FAppModeUser;
     var EventResult := Calendar.CreateEvent(Subject, StartDt, EndDt, Location, '', nil, False);
     Writeln('Event created! ID: ', EventResult.Id);
   finally
@@ -347,6 +386,8 @@ begin
 
   var Contacts := TContactsClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      Contacts.GraphClient.MailboxAddress := FAppModeUser;
     var ContactList := Contacts.SearchContacts(Query, 20);
 
     if Length(ContactList) = 0 then
@@ -380,6 +421,8 @@ begin
 
   var SP := TSharePointClient.Create(FTokenStore.GetTokens.AccessToken, LogHandler);
   try
+    if FAppMode then
+      SP.GraphClient.MailboxAddress := FAppModeUser;
     var Sites := SP.ListSites(Query, 20);
 
     if Length(Sites) = 0 then
@@ -425,8 +468,11 @@ begin
   Writeln('Token refreshed! Expires in ', NewTokens.ExpiresIn, 's');
 end;
 
-procedure TDemoApp.Run;
+procedure TDemoApp.Run(const AppMode: Boolean; const AppModeUser: string);
 begin
+  FAppMode := AppMode;
+  FAppModeUser := AppModeUser;
+
   Writeln('=== Microsoft365-4D Demo ===');
   Writeln;
   Writeln('Client ID:    ', FConfig.ClientId);
