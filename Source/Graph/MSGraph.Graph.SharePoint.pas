@@ -19,6 +19,7 @@ type
 
     class function ParseSite(const SiteObj: TJSONObject): TSite; static;
     class function ParseDriveItem(const ItemObj: TJSONObject): TDriveItem; static;
+    class procedure SortDriveItems(var Items: TArray<TDriveItem>; const OrderBy: string); static;
 
     const
       EndpointSites = '/sites';
@@ -30,10 +31,11 @@ type
     function ListSites(const Query: string; const Top: Integer = 25): TArray<TSite>;
     function GetSite(const SiteId: string): TSite;
     function ListDriveItems(const SiteId: string; const FolderId: string;
-      const Top: Integer = 50): TArray<TDriveItem>;
+      const Top: Integer = 50; const OrderBy: string = ''): TArray<TDriveItem>;
     function SearchDriveItems(const SiteId: string; const Query: string;
-      const Top: Integer = 25): TArray<TDriveItem>;
+      const Top: Integer = 25; const OrderBy: string = ''): TArray<TDriveItem>;
     function GetDriveItemContent(const SiteId: string; const ItemId: string): TDriveItem;
+    function DownloadDriveItemBytes(const SiteId: string; const Item: TDriveItem): TBytes;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -43,6 +45,7 @@ implementation
 uses
   System.SysUtils,
   System.NetEncoding,
+  System.Generics.Defaults,
   MSGraph.Graph.JsonHelper;
 
 constructor TSharePointClient.Create(const AccessToken: string; const LogProc: TLogProc);
@@ -167,7 +170,7 @@ begin
 end;
 
 function TSharePointClient.ListDriveItems(const SiteId: string; const FolderId: string;
-  const Top: Integer): TArray<TDriveItem>;
+  const Top: Integer; const OrderBy: string): TArray<TDriveItem>;
 begin
   Result := nil;
 
@@ -187,6 +190,9 @@ begin
   var QueryParams := Format('$top=%d&$select=id,name,size,webUrl,createdDateTime,lastModifiedDateTime,file,folder,parentReference',
     [ActualTop]);
 
+  if not OrderBy.Trim.IsEmpty then
+    QueryParams := QueryParams + '&$orderby=' + TNetEncoding.URL.Encode(OrderBy);
+
   var Response := FGraphClient.Get(Endpoint, QueryParams);
   try
     if TGraphJson.HasError(Response) then
@@ -205,7 +211,7 @@ begin
 end;
 
 function TSharePointClient.SearchDriveItems(const SiteId: string; const Query: string;
-  const Top: Integer): TArray<TDriveItem>;
+  const Top: Integer; const OrderBy: string): TArray<TDriveItem>;
 begin
   Result := nil;
 
@@ -233,9 +239,55 @@ begin
     SetLength(Result, ValueArray.Count);
     for var Index := 0 to ValueArray.Count - 1 do
       Result[Index] := ParseDriveItem(TGraphJson.ArrayItem(ValueArray, Index));
+
+    if not OrderBy.Trim.IsEmpty then
+      SortDriveItems(Result, OrderBy);
   finally
     Response.Free;
   end;
+end;
+
+class procedure TSharePointClient.SortDriveItems(var Items: TArray<TDriveItem>; const OrderBy: string);
+begin
+  if Length(Items) <= 1 then
+    Exit;
+
+  var Field := OrderBy.Trim.ToLower;
+  var Descending := False;
+
+  if Field.EndsWith(' desc') then
+  begin
+    Descending := True;
+    Field := Field.Substring(0, Field.Length - 5).Trim;
+  end
+  else if Field.EndsWith(' asc') then
+    Field := Field.Substring(0, Field.Length - 4).Trim;
+
+  TArray.Sort<TDriveItem>(Items, TComparer<TDriveItem>.Construct(
+    function(const Left, Right: TDriveItem): Integer
+    begin
+      if Field = 'name' then
+        Result := CompareText(Left.Name, Right.Name)
+      else if Field = 'lastmodifieddatetime' then
+        Result := CompareText(Left.LastModifiedDateTime, Right.LastModifiedDateTime)
+      else if Field = 'createddatetime' then
+        Result := CompareText(Left.CreatedDateTime, Right.CreatedDateTime)
+      else if Field = 'size' then
+      begin
+        if Left.Size < Right.Size then
+          Result := -1
+        else if Left.Size > Right.Size then
+          Result := 1
+        else
+          Result := 0;
+      end
+      else
+        Result := 0;
+
+      if Descending then
+        Result := -Result;
+    end
+  ));
 end;
 
 function TSharePointClient.GetDriveItemContent(const SiteId: string; const ItemId: string): TDriveItem;
@@ -243,7 +295,7 @@ begin
   var Endpoint := SiteEndpoint(SiteId) + '/drive/items/' + TNetEncoding.URL.Encode(ItemId);
 
   var Response := FGraphClient.Get(Endpoint,
-    '$select=id,name,size,webUrl,createdDateTime,lastModifiedDateTime,file,folder,parentReference,@microsoft.graph.downloadUrl');
+    '$select=id,name,size,webUrl,createdDateTime,lastModifiedDateTime,file,folder,parentReference');
   try
     if TGraphJson.HasError(Response) then
       raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
@@ -252,6 +304,12 @@ begin
   finally
     Response.Free;
   end;
+end;
+
+function TSharePointClient.DownloadDriveItemBytes(const SiteId: string; const Item: TDriveItem): TBytes;
+begin
+  var Endpoint := SiteEndpoint(SiteId) + '/drive/items/' + TNetEncoding.URL.Encode(Item.Id) + '/content';
+  Result := FGraphClient.GetRawBytes(Endpoint);
 end;
 
 end.

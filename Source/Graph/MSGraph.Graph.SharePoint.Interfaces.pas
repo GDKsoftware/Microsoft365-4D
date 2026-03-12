@@ -11,10 +11,11 @@ type
     function ListSites(const Query: string; const Top: Integer = 25): TArray<TSite>;
     function GetSite(const SiteId: string): TSite;
     function ListDriveItems(const SiteId: string; const FolderId: string;
-      const Top: Integer = 50): TArray<TDriveItem>;
+      const Top: Integer = 50; const OrderBy: string = ''): TArray<TDriveItem>;
     function SearchDriveItems(const SiteId: string; const Query: string;
-      const Top: Integer = 25): TArray<TDriveItem>;
+      const Top: Integer = 25; const OrderBy: string = ''): TArray<TDriveItem>;
     function GetDriveItemContent(const SiteId: string; const ItemId: string): TDriveItem;
+    function DownloadDriveItemBytes(const SiteId: string; const Item: TDriveItem): TBytes;
   end;
 
 implementation
