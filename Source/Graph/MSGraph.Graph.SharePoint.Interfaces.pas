@@ -3,6 +3,7 @@ unit MSGraph.Graph.SharePoint.Interfaces;
 interface
 
 uses
+  System.SysUtils,
   MSGraph.Graph.SharePoint.Types;
 
 type

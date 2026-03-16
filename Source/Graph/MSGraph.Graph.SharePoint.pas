@@ -3,6 +3,7 @@ unit MSGraph.Graph.SharePoint;
 interface
 
 uses
+  System.SysUtils,
   System.JSON,
   MSGraph.OAuth2.Types,
   MSGraph.Graph.Http,
@@ -43,8 +44,8 @@ type
 implementation
 
 uses
-  System.SysUtils,
   System.NetEncoding,
+  System.Generics.Collections,
   System.Generics.Defaults,
   MSGraph.Graph.JsonHelper;
 
