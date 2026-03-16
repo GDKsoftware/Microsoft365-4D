@@ -227,6 +227,7 @@ begin
   Result.ContentType := TGraphJson.GetString(AttachObj, 'contentType');
   Result.Size := TGraphJson.GetInt64(AttachObj, 'size');
   Result.IsInline := TGraphJson.GetBool(AttachObj, 'isInline');
+  Result.ContentId := TGraphJson.GetString(AttachObj, 'contentId');
   Result.ContentBytes := TGraphJson.GetString(AttachObj, 'contentBytes');
 end;
 

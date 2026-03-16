@@ -30,6 +30,7 @@ type
     ContentType: string;
     Size: Int64;
     IsInline: Boolean;
+    ContentId: string;
     ContentBytes: string;
   end;
 
