@@ -20,6 +20,8 @@ type
 
     class function ParseSite(const SiteObj: TJSONObject): TSite; static;
     class function ParseDriveItem(const ItemObj: TJSONObject): TDriveItem; static;
+    class function ParseSitePage(const PageObj: TJSONObject): TSitePage; static;
+    class function ExtractCanvasHtml(const LayoutObj: TJSONObject): string; static;
     class procedure SortDriveItems(var Items: TArray<TDriveItem>; const OrderBy: string); static;
 
     const
@@ -37,6 +39,9 @@ type
       const Top: Integer = 25; const OrderBy: string = ''): TArray<TDriveItem>;
     function GetDriveItemContent(const SiteId: string; const ItemId: string): TDriveItem;
     function DownloadDriveItemBytes(const SiteId: string; const Item: TDriveItem): TBytes;
+
+    function ListSitePages(const SiteId: string; const Top: Integer = 25): TArray<TSitePage>;
+    function GetSitePageContent(const SiteId: string; const PageId: string): TSitePage;
 
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
@@ -311,6 +316,129 @@ function TSharePointClient.DownloadDriveItemBytes(const SiteId: string; const It
 begin
   var Endpoint := SiteEndpoint(SiteId) + '/drive/items/' + TNetEncoding.URL.Encode(Item.Id) + '/content';
   Result := FGraphClient.GetRawBytes(Endpoint);
+end;
+
+{ TSharePointClient - Site Pages }
+
+class function TSharePointClient.ParseSitePage(const PageObj: TJSONObject): TSitePage;
+begin
+  Result := Default(TSitePage);
+  if not Assigned(PageObj) then
+    Exit;
+
+  Result.Id := TGraphJson.GetString(PageObj, 'id');
+  Result.Title := TGraphJson.GetString(PageObj, 'title');
+  Result.Name := TGraphJson.GetString(PageObj, 'name');
+  Result.WebUrl := TGraphJson.GetString(PageObj, 'webUrl');
+  Result.Description := TGraphJson.GetString(PageObj, 'description');
+  Result.CreatedDateTime := TGraphJson.GetString(PageObj, 'createdDateTime');
+  Result.LastModifiedDateTime := TGraphJson.GetString(PageObj, 'lastModifiedDateTime');
+end;
+
+class function TSharePointClient.ExtractCanvasHtml(const LayoutObj: TJSONObject): string;
+begin
+  Result := '';
+  if not Assigned(LayoutObj) then
+    Exit;
+
+  var Sections := TGraphJson.GetArray(LayoutObj, 'horizontalSections');
+  if not Assigned(Sections) then
+    Exit;
+
+  var Builder := TStringBuilder.Create;
+  try
+    for var SectionIndex := 0 to Sections.Count - 1 do
+    begin
+      var Section := TGraphJson.ArrayItem(Sections, SectionIndex);
+      if not Assigned(Section) then
+        Continue;
+
+      var Columns := TGraphJson.GetArray(Section, 'columns');
+      if not Assigned(Columns) then
+        Continue;
+
+      for var ColumnIndex := 0 to Columns.Count - 1 do
+      begin
+        var Column := TGraphJson.ArrayItem(Columns, ColumnIndex);
+        if not Assigned(Column) then
+          Continue;
+
+        var Webparts := TGraphJson.GetArray(Column, 'webparts');
+        if not Assigned(Webparts) then
+          Continue;
+
+        for var WebpartIndex := 0 to Webparts.Count - 1 do
+        begin
+          var Webpart := TGraphJson.ArrayItem(Webparts, WebpartIndex);
+          if not Assigned(Webpart) then
+            Continue;
+
+          var InnerHtml := TGraphJson.GetString(Webpart, 'innerHtml');
+          if not InnerHtml.IsEmpty then
+          begin
+            if Builder.Length > 0 then
+              Builder.AppendLine;
+            Builder.Append(InnerHtml);
+          end;
+        end;
+      end;
+    end;
+
+    Result := Builder.ToString;
+  finally
+    Builder.Free;
+  end;
+end;
+
+function TSharePointClient.ListSitePages(const SiteId: string; const Top: Integer): TArray<TSitePage>;
+begin
+  Result := nil;
+
+  var ActualTop := Top;
+  if ActualTop < 1 then
+    ActualTop := 25
+  else if ActualTop > 100 then
+    ActualTop := 100;
+
+  var Endpoint := SiteEndpoint(SiteId) + '/pages';
+  var QueryParams := Format('$top=%d&$select=id,title,name,webUrl,description,createdDateTime,lastModifiedDateTime',
+    [ActualTop]);
+
+  var Response := FGraphClient.Get(Endpoint, QueryParams);
+  try
+    if TGraphJson.HasError(Response) then
+      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+
+    var ValueArray := TGraphJson.GetArray(Response, 'value');
+    if not Assigned(ValueArray) then
+      Exit;
+
+    SetLength(Result, ValueArray.Count);
+    for var Index := 0 to ValueArray.Count - 1 do
+      Result[Index] := ParseSitePage(TGraphJson.ArrayItem(ValueArray, Index));
+  finally
+    Response.Free;
+  end;
+end;
+
+function TSharePointClient.GetSitePageContent(const SiteId: string; const PageId: string): TSitePage;
+begin
+  var Endpoint := SiteEndpoint(SiteId) + '/pages/' + TNetEncoding.URL.Encode(PageId) +
+    '/microsoft.graph.sitePage';
+
+  var Response := FGraphClient.Get(Endpoint,
+    '$select=id,title,name,webUrl,description,createdDateTime,lastModifiedDateTime&$expand=canvasLayout');
+  try
+    if TGraphJson.HasError(Response) then
+      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+
+    Result := ParseSitePage(Response);
+
+    var CanvasLayout := TGraphJson.GetObject(Response, 'canvasLayout');
+    Result.ContentHtml := ExtractCanvasHtml(CanvasLayout);
+  finally
+    Response.Free;
+  end;
 end;
 
 end.
