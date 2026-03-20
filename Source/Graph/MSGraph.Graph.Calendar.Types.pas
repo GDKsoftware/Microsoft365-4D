@@ -43,6 +43,16 @@ type
     WebLink: string;
   end;
 
+  {$SCOPEDENUMS ON}
+  TEventResponseType = (None, Organizer, TentativelyAccepted, Accepted, Declined, NotResponded);
+  {$SCOPEDENUMS OFF}
+
+  TProposedNewTime = record
+    StartDateTime: string;
+    EndDateTime: string;
+    TimeZone: string;
+  end;
+
 implementation
 
 end.

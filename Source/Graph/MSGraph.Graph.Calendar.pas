@@ -51,6 +51,11 @@ type
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const TimeZone: string = DefaultCalendarTimeZone): TArray<TScheduleResult>;
 
+    function AcceptEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function DeclineEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function TentativelyAcceptEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function ProposeNewTime(const EventId: string; const NewTime: TProposedNewTime; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+
     property GraphClient: TGraphHttpClient read FGraphClient;
   end;
 
@@ -406,6 +411,97 @@ begin
       SetLength(Result, ValueArray.Count);
       for var Index := 0 to ValueArray.Count - 1 do
         Result[Index] := ParseScheduleResult(TGraphJson.ArrayItem(ValueArray, Index));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestObj.Free;
+  end;
+end;
+
+function TCalendarClient.AcceptEvent(const EventId: string; const Comment: string; const SendResponse: Boolean): Boolean;
+begin
+  var RequestObj := TJSONObject.Create;
+  try
+    RequestObj.AddPair('comment', Comment);
+    RequestObj.AddPair('sendResponse', TJSONBool.Create(SendResponse));
+
+    var Response := FGraphClient.Post(EndpointEvents + '/' + EventId + '/accept', RequestObj.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestObj.Free;
+  end;
+end;
+
+function TCalendarClient.DeclineEvent(const EventId: string; const Comment: string; const SendResponse: Boolean): Boolean;
+begin
+  var RequestObj := TJSONObject.Create;
+  try
+    RequestObj.AddPair('comment', Comment);
+    RequestObj.AddPair('sendResponse', TJSONBool.Create(SendResponse));
+
+    var Response := FGraphClient.Post(EndpointEvents + '/' + EventId + '/decline', RequestObj.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestObj.Free;
+  end;
+end;
+
+function TCalendarClient.TentativelyAcceptEvent(const EventId: string; const Comment: string; const SendResponse: Boolean): Boolean;
+begin
+  var RequestObj := TJSONObject.Create;
+  try
+    RequestObj.AddPair('comment', Comment);
+    RequestObj.AddPair('sendResponse', TJSONBool.Create(SendResponse));
+
+    var Response := FGraphClient.Post(EndpointEvents + '/' + EventId + '/tentativelyAccept', RequestObj.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestObj.Free;
+  end;
+end;
+
+function TCalendarClient.ProposeNewTime(const EventId: string; const NewTime: TProposedNewTime; const Comment: string; const SendResponse: Boolean): Boolean;
+begin
+  var RequestObj := TJSONObject.Create;
+  try
+    RequestObj.AddPair('comment', Comment);
+    RequestObj.AddPair('sendResponse', TJSONBool.Create(SendResponse));
+
+    var ProposedObj := TJSONObject.Create;
+    var StartObj := TJSONObject.Create;
+    StartObj.AddPair('dateTime', NewTime.StartDateTime);
+    StartObj.AddPair('timeZone', NewTime.TimeZone);
+    ProposedObj.AddPair('start', StartObj);
+    var EndObj := TJSONObject.Create;
+    EndObj.AddPair('dateTime', NewTime.EndDateTime);
+    EndObj.AddPair('timeZone', NewTime.TimeZone);
+    ProposedObj.AddPair('end', EndObj);
+    RequestObj.AddPair('proposedNewTime', ProposedObj);
+
+    var Response := FGraphClient.Post(EndpointEvents + '/' + EventId + '/tentativelyAccept', RequestObj.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
     finally
       Response.Free;
     end;

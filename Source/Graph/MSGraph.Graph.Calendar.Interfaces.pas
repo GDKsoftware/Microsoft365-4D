@@ -26,6 +26,11 @@ type
     function GetScheduleAvailability(const Schedules: TArray<string>;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const TimeZone: string = DefaultCalendarTimeZone): TArray<TScheduleResult>;
+
+    function AcceptEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function DeclineEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function TentativelyAcceptEvent(const EventId: string; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
+    function ProposeNewTime(const EventId: string; const NewTime: TProposedNewTime; const Comment: string = ''; const SendResponse: Boolean = True): Boolean;
   end;
 
 implementation
