@@ -196,6 +196,7 @@ begin
   Result.BodyPreview := TGraphJson.GetString(MsgObj, 'bodyPreview');
   Result.Importance := TGraphJson.GetString(MsgObj, 'importance');
   Result.ParentFolderId := TGraphJson.GetString(MsgObj, 'parentFolderId');
+  Result.MeetingMessageType := TGraphJson.GetString(MsgObj, 'meetingMessageType');
 
   var BodyObj := TGraphJson.GetObject(MsgObj, 'body');
   if not Assigned(BodyObj) then
@@ -234,7 +235,7 @@ end;
 class function TMailClient.BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
   const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string;
 begin
-  Result := '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,bodyPreview,importance,parentFolderId';
+  Result := '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,bodyPreview,importance,parentFolderId,meetingMessageType';
 
   const IncludeBody = (ActualTop <= 5);
   if IncludeBody then
@@ -312,7 +313,7 @@ end;
 function TMailClient.GetMessage(const MessageId: string; const IncludeBody: Boolean): TMailMessage;
 begin
   var Response := FGraphClient.Get(MessageEndpoint(MessageId),
-    '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview,importance,parentFolderId');
+    '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview,importance,parentFolderId,meetingMessageType');
   try
     if TGraphJson.HasError(Response) then
       raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
@@ -673,7 +674,7 @@ function TMailClient.ListFolderMessages(const FolderId: string;
   const Top: Integer; const Skip: Integer): TSearchMessagesResult;
 const
   SelectFields = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
-    'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
+    'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId,meetingMessageType';
 begin
   Result := Default(TSearchMessagesResult);
 

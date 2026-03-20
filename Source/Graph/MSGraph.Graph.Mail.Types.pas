@@ -22,6 +22,7 @@ type
     BodyPreview: string;
     Importance: string;
     ParentFolderId: string;
+    MeetingMessageType: string;
   end;
 
   TMailAttachment = record
