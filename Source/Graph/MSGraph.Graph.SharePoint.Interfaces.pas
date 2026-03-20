@@ -17,6 +17,9 @@ type
       const Top: Integer = 25; const OrderBy: string = ''): TArray<TDriveItem>;
     function GetDriveItemContent(const SiteId: string; const ItemId: string): TDriveItem;
     function DownloadDriveItemBytes(const SiteId: string; const Item: TDriveItem): TBytes;
+
+    function ListSitePages(const SiteId: string; const Top: Integer = 25): TArray<TSitePage>;
+    function GetSitePageContent(const SiteId: string; const PageId: string): TSitePage;
   end;
 
 implementation

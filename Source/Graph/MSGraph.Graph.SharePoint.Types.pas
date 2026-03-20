@@ -13,6 +13,17 @@ type
     LastModifiedDateTime: string;
   end;
 
+  TSitePage = record
+    Id: string;
+    Title: string;
+    Name: string;
+    WebUrl: string;
+    Description: string;
+    CreatedDateTime: string;
+    LastModifiedDateTime: string;
+    ContentHtml: string;
+  end;
+
   TDriveItem = record
     Id: string;
     Name: string;
