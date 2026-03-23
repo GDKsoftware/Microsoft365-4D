@@ -200,8 +200,8 @@ begin
 
   if Result.MeetingMessageType.IsEmpty then
   begin
-    var ODataType := TGraphJson.GetString(MsgObj, '@odata.type');
-    if ODataType.Contains('eventMessage') then
+    var ODataTypeValue := MsgObj.GetValue('@odata.type');
+    if Assigned(ODataTypeValue) and ODataTypeValue.Value.Contains('eventMessage') then
       Result.MeetingMessageType := 'meetingRequest';
   end;
 
