@@ -198,6 +198,13 @@ begin
   Result.ParentFolderId := TGraphJson.GetString(MsgObj, 'parentFolderId');
   Result.MeetingMessageType := TGraphJson.GetString(MsgObj, 'meetingMessageType');
 
+  if Result.MeetingMessageType.IsEmpty then
+  begin
+    var ODataType := TGraphJson.GetString(MsgObj, '@odata.type');
+    if ODataType.Contains('eventMessage') then
+      Result.MeetingMessageType := 'meetingRequest';
+  end;
+
   var BodyObj := TGraphJson.GetObject(MsgObj, 'body');
   if not Assigned(BodyObj) then
     Exit;
