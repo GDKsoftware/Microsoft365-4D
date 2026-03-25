@@ -30,6 +30,8 @@ type
       const Code: string;
       const CodeVerifier: string): TOAuth2TokenResponse;
 
+    function ClientCredentialsToken: TOAuth2TokenResponse;
+
     function RefreshAccessToken(const RefreshToken: string): TOAuth2TokenResponse;
 
     property Config: TOAuth2Config read FConfig;
@@ -145,6 +147,25 @@ begin
 
     Result := PostTokenRequest(PostData);
     Log(LogInfo, 'Token exchange successful, expires in ' + IntToStr(Result.ExpiresIn) + 's');
+  finally
+    PostData.Free;
+  end;
+end;
+
+function TOAuth2Client.ClientCredentialsToken: TOAuth2TokenResponse;
+begin
+  Log(LogInfo, 'Getting Application token');
+
+  var Scope := BuildScopeString(FConfig.Scopes);
+  var PostData := TStringList.Create;
+  try
+    PostData.Add('grant_type=client_credentials');
+    PostData.Add('client_id=' + FConfig.ClientId);
+    PostData.Add('client_secret=' + FConfig.ClientSecret);
+    PostData.Add('scope=' + Scope);
+
+    Result := PostTokenRequest(PostData);
+    Log(LogInfo, 'Application token successful, expires in ' + IntToStr(Result.ExpiresIn) + 's');
   finally
     PostData.Free;
   end;

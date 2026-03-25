@@ -54,6 +54,9 @@ begin
     Config.RedirectUri := FindParamValue('--redirect-uri');
     var PortStr := FindParamValue('--port');
 
+    var AppMode := FindParamValue('--appmode').Trim.ToLower.Equals('yes');
+    var AppModeUser := FindParamValue('--appmodeuser').Trim.ToLower;
+
     if Config.ClientId.IsEmpty then
       Config.ClientId := PromptForValue('Client ID: ');
 
@@ -62,6 +65,12 @@ begin
 
     if Config.TenantId.IsEmpty then
       Config.TenantId := PromptForValue('Tenant ID: ');
+
+    if not AppMode then
+      AppMode := PromptForValue('Application Mode (yes/no, Enter for no): ').Trim.ToLower.Equals('yes');
+
+    if AppMode and AppModeUser.Trim.IsEmpty then
+      AppModeUser := PromptForValue('Application Mode user: ');
 
     if PortStr.IsEmpty then
       Config.Port := 8080
@@ -73,16 +82,28 @@ begin
 
     if Config.RedirectUri.IsEmpty then
       Config.RedirectUri := 'http://localhost:' + IntToStr(Config.Port) + '/oauth/callback';
-    Config.Scopes := TArray<string>.Create(
-      'openid', 'profile', 'offline_access',
-      'Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.Read',
-      'Calendars.ReadWrite', 'Contacts.ReadWrite',
-      'Sites.Read.All', 'User.Read'
-    );
+
+    if AppMode then
+    begin
+      // Application scopes
+      Config.Scopes := TArray<string>.Create(
+        'https://graph.microsoft.com/.default'
+      );
+    end
+    else
+    begin
+      // Graph OAuth2 flow scopes
+      Config.Scopes := TArray<string>.Create(
+        'openid', 'profile', 'offline_access',
+        'Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.Read',
+        'Calendars.ReadWrite', 'Contacts.ReadWrite',
+        'Sites.Read.All', 'User.Read'
+      );
+    end;
 
     var App := TDemoApp.Create(Config);
     try
-      App.Run;
+      App.Run(AppMode, AppModeUser);
     finally
       App.Free;
     end;
