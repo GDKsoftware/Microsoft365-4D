@@ -2,7 +2,7 @@
 min dpm client version: 1.0.0
 metadata:
   id: GDK.Microsoft365
-  version: 1.0.0
+  version: 1.0.1
   description: 'Delphi library for Microsoft 365: OAuth2 with PKCE, Mail, Calendar, Contacts and SharePoint via Microsoft Graph. No external dependencies.'
   authors:
     - GDK Software
@@ -25,6 +25,7 @@ targetPlatforms:
     platforms:
       - win32
       - win64
+      - linux64
 templates:
   - name: default
     source:
