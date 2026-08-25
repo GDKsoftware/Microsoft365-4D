@@ -7,7 +7,8 @@ uses
   DUnitX.TestFramework,
   MSGraph.Graph.Http,
   MSGraph.Graph.Http.Transport.Fake,
-  MSGraph.Graph.Mail.Interfaces;
+  MSGraph.Graph.Mail.Interfaces,
+  MSGraph.Graph.Mail.Types;
 
 type
   [TestFixture]
@@ -18,6 +19,8 @@ type
     FMailClient: IMailClient;
 
     class function JsonString(const Obj: TJSONObject; const Name: string): string; static;
+    function CaptureHeaderError(const Headers: TArray<TMailHeader>): string;
+    function PostedMessageBody(const RequestIndex: Integer): TJSONObject;
   public
     [Setup]
     procedure Setup;
@@ -32,6 +35,23 @@ type
     procedure AddAttachment_SendsBase64FileAttachment;
     [Test]
     procedure UnstubbedRequest_RaisesException;
+
+    [Test]
+    procedure CreateDraft_WithCustomHeaders_AddsInternetMessageHeaders;
+    [Test]
+    procedure CreateDraft_UppercaseXPrefix_IsAccepted;
+    [Test]
+    procedure CreateDraft_EmptyHeaderArray_OmitsInternetMessageHeaders;
+    [Test]
+    procedure CreateDraft_HeaderWithoutXPrefix_RaisesReadableException;
+    [Test]
+    procedure CreateDraft_HeaderWithEmptyName_RaisesReadableException;
+    [Test]
+    procedure CreateDraft_HeaderValueWithLineBreak_RaisesReadableException;
+    [Test]
+    procedure CreateDraft_DuplicateHeaderName_RaisesReadableException;
+    [Test]
+    procedure UpdateDraft_OmitsInternetMessageHeaders;
   end;
 
 implementation
@@ -39,12 +59,12 @@ implementation
 uses
   System.SysUtils,
   MSGraph.Graph.JsonHelper,
-  MSGraph.Graph.Mail,
-  MSGraph.Graph.Mail.Types;
+  MSGraph.Graph.Mail;
 
 const
   DummyAccessToken = 'unit-test-token';
   SharedMailbox = 'shared@example.com';
+  Recipient = 'to@example.com';
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -55,6 +75,24 @@ begin
   var Value := Obj.Values[Name];
   if Assigned(Value) then
     Result := Value.Value;
+end;
+
+function TMailClientTests.CaptureHeaderError(const Headers: TArray<TMailHeader>): string;
+begin
+  Result := '';
+  try
+    FMailClient.CreateDraft('Subject', 'Body', [Recipient], [], [], False, Headers);
+  except
+    on E: EInvalidMailHeaderException do
+      Result := E.Message;
+  end;
+end;
+
+function TMailClientTests.PostedMessageBody(const RequestIndex: Integer): TJSONObject;
+begin
+  const Posted = FFake.RequestAt(RequestIndex);
+  Result := TJSONObject.ParseJSONValue(Posted.Body) as TJSONObject;
+  Assert.IsNotNull(Result, 'body is not valid JSON: ' + Posted.Body);
 end;
 
 procedure TMailClientTests.Setup;
@@ -105,6 +143,8 @@ begin
 
     Assert.IsNull(TGraphJson.GetArray(Body, 'ccRecipients'), 'an empty cc must not appear in the body');
     Assert.IsNull(TGraphJson.GetArray(Body, 'bccRecipients'), 'an empty bcc must not appear in the body');
+    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+      'a call without custom headers must not add internetMessageHeaders');
   finally
     Body.Free;
   end;
@@ -160,6 +200,119 @@ begin
     end,
     Exception,
     'a request without a stubbed response must not pass silently');
+end;
+
+procedure TMailClientTests.CreateDraft_WithCustomHeaders_AddsInternetMessageHeaders;
+begin
+  FFake.EnqueueResponse(200, '{}');
+  FFake.EnqueueResponse(201, '{"id":"AAMkHeaders"}');
+
+  FMailClient.CreateDraft('Subject', 'Body', [Recipient], [], [], False,
+    [TMailHeader.Create('x-example-id', '42'), TMailHeader.Create('x-example-source', 'integration')]);
+
+  var Body := PostedMessageBody(1);
+  try
+    var Headers := TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    Assert.IsNotNull(Headers, 'internetMessageHeaders is missing');
+    Assert.AreEqual(2, Headers.Count);
+
+    var First := TGraphJson.ArrayItem(Headers, 0);
+    Assert.AreEqual('x-example-id', JsonString(First, 'name'));
+    Assert.AreEqual('42', JsonString(First, 'value'));
+
+    var Second := TGraphJson.ArrayItem(Headers, 1);
+    Assert.AreEqual('x-example-source', JsonString(Second, 'name'));
+    Assert.AreEqual('integration', JsonString(Second, 'value'));
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TMailClientTests.CreateDraft_UppercaseXPrefix_IsAccepted;
+begin
+  FFake.EnqueueResponse(200, '{}');
+  FFake.EnqueueResponse(201, '{"id":"AAMkHeaders"}');
+
+  FMailClient.CreateDraft('Subject', 'Body', [Recipient], [], [], False,
+    [TMailHeader.Create('X-Example-Id', '42')]);
+
+  var Body := PostedMessageBody(1);
+  try
+    var Headers := TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    Assert.IsNotNull(Headers, 'the prefix check must be case insensitive');
+    Assert.AreEqual('X-Example-Id', JsonString(TGraphJson.ArrayItem(Headers, 0), 'name'),
+      'the name must be sent exactly as supplied');
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TMailClientTests.CreateDraft_EmptyHeaderArray_OmitsInternetMessageHeaders;
+begin
+  FFake.EnqueueResponse(200, '{}');
+  FFake.EnqueueResponse(201, '{"id":"AAMkHeaders"}');
+
+  FMailClient.CreateDraft('Subject', 'Body', [Recipient], [], [], False, []);
+
+  var Body := PostedMessageBody(1);
+  try
+    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+      'an empty header array must not appear in the body');
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TMailClientTests.CreateDraft_HeaderWithoutXPrefix_RaisesReadableException;
+begin
+  const Message = CaptureHeaderError([TMailHeader.Create('Example-Id', '42')]);
+
+  Assert.IsTrue(Message.Contains('Example-Id'), 'the message must name the header: ' + Message);
+  Assert.IsTrue(Message.Contains('"x-"'), 'the message must state the rule: ' + Message);
+  Assert.AreEqual(0, FFake.RequestCount, 'an invalid header must be rejected before any request');
+end;
+
+procedure TMailClientTests.CreateDraft_HeaderWithEmptyName_RaisesReadableException;
+begin
+  const Message = CaptureHeaderError([TMailHeader.Create('   ', '42')]);
+
+  Assert.IsTrue(Message.Contains('must not be empty'), 'unexpected message: ' + Message);
+  Assert.AreEqual(0, FFake.RequestCount, 'an invalid header must be rejected before any request');
+end;
+
+procedure TMailClientTests.CreateDraft_HeaderValueWithLineBreak_RaisesReadableException;
+begin
+  const Message = CaptureHeaderError([TMailHeader.Create('x-example-id', '42'#13#10'x-injected: yes')]);
+
+  Assert.IsTrue(Message.Contains('x-example-id'), 'the message must name the header: ' + Message);
+  Assert.IsTrue(Message.Contains('control characters'), 'unexpected message: ' + Message);
+  Assert.AreEqual(0, FFake.RequestCount, 'an invalid header must be rejected before any request');
+end;
+
+procedure TMailClientTests.CreateDraft_DuplicateHeaderName_RaisesReadableException;
+begin
+  const Message = CaptureHeaderError([TMailHeader.Create('x-example-id', '1'),
+    TMailHeader.Create('X-Example-Id', '2')]);
+
+  Assert.IsTrue(Message.Contains('more than once'), 'unexpected message: ' + Message);
+  Assert.AreEqual(0, FFake.RequestCount, 'an invalid header must be rejected before any request');
+end;
+
+procedure TMailClientTests.UpdateDraft_OmitsInternetMessageHeaders;
+begin
+  FFake.EnqueueResponse(200, '{"id":"MSG-1"}');
+
+  FMailClient.UpdateDraft('MSG-1', 'Subject', 'Body', [Recipient], [], [], False);
+
+  Assert.AreEqual('PATCH', FFake.LastRequest.Method);
+
+  var Body := PostedMessageBody(0);
+  try
+    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+      'Graph accepts internetMessageHeaders only when creating a message, not on a patch');
+  finally
+    Body.Free;
+  end;
 end;
 
 initialization

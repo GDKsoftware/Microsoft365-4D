@@ -12,6 +12,7 @@ uses
 
 type
   EDeltaLinkExpiredException = class(EGraphApiException);
+  EInvalidMailHeaderException = class(EMSGraphException);
 
   TMailClient = class(TInterfacedObject, IMailClient)
   strict private
@@ -19,9 +20,13 @@ type
     FOwnsClient: Boolean;
 
     function BuildRecipientArray(const Recipients: TArray<string>): TJSONArray;
+    function BuildInternetMessageHeaders(const Headers: TArray<TMailHeader>): TJSONArray;
+    class function ContainsControlCharacter(const Value: string): Boolean; static;
+    class procedure ValidateCustomHeaders(const Headers: TArray<TMailHeader>); static;
     function BuildMessageBody(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean;
+      const Headers: TArray<TMailHeader>): TJSONObject;
     function MessageEndpoint(const MessageId: string): string;
 
     function EndpointMessages: string;
@@ -41,6 +46,7 @@ type
     const
       ContentTypeHtml = 'HTML';
       ContentTypeText = 'Text';
+      CustomHeaderPrefix = 'x-';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
   public
@@ -55,7 +61,11 @@ type
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult; overload;
+    function CreateDraft(const Subject: string; const Body: string;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean;
+      const Headers: TArray<TMailHeader>): TDraftResult; overload;
     function UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
       const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
@@ -121,9 +131,60 @@ begin
   end;
 end;
 
+function TMailClient.BuildInternetMessageHeaders(const Headers: TArray<TMailHeader>): TJSONArray;
+begin
+  Result := TJSONArray.Create;
+  for var Header in Headers do
+  begin
+    var HeaderObj := TJSONObject.Create;
+    HeaderObj.AddPair('name', Header.Name);
+    HeaderObj.AddPair('value', Header.Value);
+    Result.Add(HeaderObj);
+  end;
+end;
+
+class function TMailClient.ContainsControlCharacter(const Value: string): Boolean;
+begin
+  Result := False;
+  for var Character in Value do
+    if Character < ' ' then
+      Exit(True);
+end;
+
+class procedure TMailClient.ValidateCustomHeaders(const Headers: TArray<TMailHeader>);
+begin
+  for var Index := Low(Headers) to High(Headers) do
+  begin
+    const Header = Headers[Index];
+
+    if Header.Name.Trim.IsEmpty then
+      raise EInvalidMailHeaderException.Create('A custom mail header name must not be empty.');
+
+    if not Header.Name.ToLower.StartsWith(CustomHeaderPrefix) then
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" is not allowed: a custom header name must start with "%s".',
+        [Header.Name, CustomHeaderPrefix]);
+
+    if ContainsControlCharacter(Header.Name) then
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" must not contain line breaks or control characters.', [Header.Name]);
+
+    if ContainsControlCharacter(Header.Value) then
+      raise EInvalidMailHeaderException.CreateFmt(
+        'The value of custom mail header "%s" must not contain line breaks or control characters.',
+        [Header.Name]);
+
+    for var Earlier := Low(Headers) to Index - 1 do
+      if SameText(Headers[Earlier].Name, Header.Name) then
+        raise EInvalidMailHeaderException.CreateFmt(
+          'Custom mail header "%s" is specified more than once.', [Header.Name]);
+  end;
+end;
+
 function TMailClient.BuildMessageBody(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-  const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean;
+  const Headers: TArray<TMailHeader>): TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('subject', Subject);
@@ -145,6 +206,10 @@ begin
   const HasBccRecipients = (Length(BccRecipients) > 0);
   if HasBccRecipients then
     Result.AddPair('bccRecipients', BuildRecipientArray(BccRecipients));
+
+  const HasHeaders = (Length(Headers) > 0);
+  if HasHeaders then
+    Result.AddPair('internetMessageHeaders', BuildInternetMessageHeaders(Headers));
 end;
 
 function TMailClient.EndpointMessages: string;
@@ -398,6 +463,16 @@ function TMailClient.CreateDraft(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
   const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
+  Result := CreateDraft(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml, nil);
+end;
+
+function TMailClient.CreateDraft(const Subject: string; const Body: string;
+  const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean;
+  const Headers: TArray<TMailHeader>): TDraftResult;
+begin
+  ValidateCustomHeaders(Headers);
+
   Result := Default(TDraftResult);
   var Signature := GetMailboxSignature;
   var FinalBody := Body;
@@ -411,7 +486,7 @@ begin
       FinalBody := FinalBody + #13#10#13#10 + Signature;
   end;
 
-  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, BccRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, BccRecipients, IsHtml, Headers);
   try
     var DraftEndpoint: string;
     if FGraphClient.IsSharedMailbox then
@@ -438,7 +513,7 @@ function TMailClient.UpdateDraft(const MessageId: string; const Subject: string;
   const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
   Result := Default(TDraftResult);
-  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml, nil);
   try
     var Response := FGraphClient.Patch(MessageEndpoint(MessageId), MessageObj.ToJSON);
     try

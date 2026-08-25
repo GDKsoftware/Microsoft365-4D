@@ -141,6 +141,20 @@ var Messages := Mail.SearchMessages('*', '', 10, 0);
 
 This requires the `Mail.Read.Shared` and/or `Mail.Send.Shared` delegated permissions in your Azure AD app registration.
 
+### 7. Add Custom Internet Message Headers
+
+`CreateDraft` has an overload that takes custom headers. They are written to the message as `internetMessageHeaders` and travel with it when the draft is sent:
+
+```pascal
+var Draft := Mail.CreateDraft('Subject', 'Body', ['recipient@company.com'], [], [], False,
+  [TMailHeader.Create('x-example-id', '42')]);
+Mail.SendDraft(Draft.Id);
+```
+
+Microsoft Graph requires a custom header name to start with `x-`. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when a name is empty, lacks the `x-` prefix, is supplied more than once, or when a name or value contains control characters.
+
+Graph accepts `internetMessageHeaders` only when a message is created, so `UpdateDraft` does not offer this parameter.
+
 ## Project Structure
 
 ```
@@ -183,6 +197,7 @@ All library exceptions inherit from `EMSGraphException`:
 | `EOAuth2Exception` | Token exchange failures, invalid responses |
 | `EGraphApiException` | Graph API HTTP errors, missing access token |
 | `ETokenStoreException` | Missing tokens, expired PKCE sessions |
+| `EInvalidMailHeaderException` | Invalid custom mail header supplied by the caller |
 
 ### TMailClient
 
@@ -192,8 +207,9 @@ All library exceptions inherit from `EMSGraphException`:
 | `GetMessage(MessageId)` | Get full message by ID |
 | `GetMessageAttachments(MessageId)` | List attachments |
 | `GetAttachmentContent(MessageId, AttachmentId)` | Get attachment content |
-| `CreateDraft(Subject, Body, To, Cc, IsHtml)` | Create draft |
-| `UpdateDraft(MessageId, Subject, Body, To, Cc, IsHtml)` | Update existing draft |
+| `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml)` | Create draft |
+| `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml, Headers)` | Create draft with custom internet message headers |
+| `UpdateDraft(MessageId, Subject, Body, To, Cc, Bcc, IsHtml)` | Update existing draft |
 | `SendDraft(MessageId)` | Send a draft message |
 | `DeleteDraft(MessageId)` | Delete a draft |
 | `MoveMessage(MessageId, FolderId)` | Move message to folder |

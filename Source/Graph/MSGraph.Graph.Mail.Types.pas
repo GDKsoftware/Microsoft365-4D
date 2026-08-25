@@ -8,6 +8,14 @@ type
     Address: string;
   end;
 
+  TMailHeader = record
+  public
+    Name: string;
+    Value: string;
+
+    constructor Create(const AName: string; const AValue: string);
+  end;
+
   TMailMessage = record
     Id: string;
     ConversationId: string;
@@ -70,5 +78,11 @@ type
   end;
 
 implementation
+
+constructor TMailHeader.Create(const AName: string; const AValue: string);
+begin
+  Name := AName;
+  Value := AValue;
+end;
 
 end.

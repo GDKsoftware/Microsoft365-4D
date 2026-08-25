@@ -16,7 +16,11 @@ type
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult; overload;
+    function CreateDraft(const Subject: string; const Body: string;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean;
+      const Headers: TArray<TMailHeader>): TDraftResult; overload;
     function UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
       const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
