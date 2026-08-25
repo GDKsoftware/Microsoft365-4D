@@ -47,6 +47,7 @@ type
       ContentTypeHtml = 'HTML';
       ContentTypeText = 'Text';
       CustomHeaderPrefix = 'x-';
+      MaxCustomHeaders = 5;
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
   public
@@ -153,6 +154,11 @@ end;
 
 class procedure TMailClient.ValidateCustomHeaders(const Headers: TArray<TMailHeader>);
 begin
+  if Length(Headers) > MaxCustomHeaders then
+    raise EInvalidMailHeaderException.CreateFmt(
+      'A message accepts at most %d custom mail headers, but %d were supplied.',
+      [MaxCustomHeaders, Length(Headers)]);
+
   for var Index := Low(Headers) to High(Headers) do
   begin
     const Header = Headers[Index];

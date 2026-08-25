@@ -51,6 +51,10 @@ type
     [Test]
     procedure CreateDraft_DuplicateHeaderName_RaisesReadableException;
     [Test]
+    procedure CreateDraft_MoreThanFiveHeaders_RaisesReadableException;
+    [Test]
+    procedure CreateDraft_FiveHeaders_IsAccepted;
+    [Test]
     procedure UpdateDraft_OmitsInternetMessageHeaders;
   end;
 
@@ -296,6 +300,41 @@ begin
 
   Assert.IsTrue(Message.Contains('more than once'), 'unexpected message: ' + Message);
   Assert.AreEqual(0, FFake.RequestCount, 'an invalid header must be rejected before any request');
+end;
+
+procedure TMailClientTests.CreateDraft_MoreThanFiveHeaders_RaisesReadableException;
+begin
+  var Headers: TArray<TMailHeader>;
+  SetLength(Headers, 6);
+  for var Index := 0 to High(Headers) do
+    Headers[Index] := TMailHeader.Create('x-example-' + Index.ToString, Index.ToString);
+
+  const Message = CaptureHeaderError(Headers);
+
+  Assert.IsTrue(Message.Contains('at most 5'), 'unexpected message: ' + Message);
+  Assert.AreEqual(0, FFake.RequestCount, 'too many headers must be rejected before any request');
+end;
+
+procedure TMailClientTests.CreateDraft_FiveHeaders_IsAccepted;
+begin
+  FFake.EnqueueResponse(200, '{}');
+  FFake.EnqueueResponse(201, '{"id":"AAMkHeaders"}');
+
+  var Headers: TArray<TMailHeader>;
+  SetLength(Headers, 5);
+  for var Index := 0 to High(Headers) do
+    Headers[Index] := TMailHeader.Create('x-example-' + Index.ToString, Index.ToString);
+
+  FMailClient.CreateDraft('Subject', 'Body', [Recipient], [], [], False, Headers);
+
+  var Body := PostedMessageBody(1);
+  try
+    var Posted := TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    Assert.IsNotNull(Posted, 'five headers is the documented maximum and must be accepted');
+    Assert.AreEqual(5, Posted.Count);
+  finally
+    Body.Free;
+  end;
 end;
 
 procedure TMailClientTests.UpdateDraft_OmitsInternetMessageHeaders;

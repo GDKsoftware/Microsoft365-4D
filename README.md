@@ -151,9 +151,11 @@ var Draft := Mail.CreateDraft('Subject', 'Body', ['recipient@company.com'], [], 
 Mail.SendDraft(Draft.Id);
 ```
 
-Microsoft Graph requires a custom header name to start with `x-`. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when a name is empty, lacks the `x-` prefix, is supplied more than once, or when a name or value contains control characters.
+Microsoft Graph requires a custom header name to start with `x-`, and accepts at most five custom headers per message. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when there are more than five, or when a name is empty, lacks the `x-` prefix, is supplied more than once, or contains control characters in its name or value.
 
 Graph accepts `internetMessageHeaders` only when a message is created, so `UpdateDraft` does not offer this parameter.
+
+Two things to know about the receiving side. Exchange Online maps a custom header name to a named property on first use, and does not store the value on that very first message — only later messages carrying the same header name keep their value. A transport rule or the header firewall can also strip custom headers in transit.
 
 ## Project Structure
 
