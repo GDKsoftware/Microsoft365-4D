@@ -6,7 +6,9 @@ uses
   System.SysUtils,
   System.JSON,
   System.Net.URLClient,
-  MSGraph.OAuth2.Types;
+  MSGraph.OAuth2.Types,
+  MSGraph.Graph.Http.Types,
+  MSGraph.Graph.Http.Interfaces;
 
 type
   TUserProfile = record
@@ -21,9 +23,11 @@ type
     FLogProc: TLogProc;
     FExtraHeaders: TArray<TNetHeader>;
     FMailboxAddress: string;
+    FTransport: IGraphHttpTransport;
 
     function BuildUrl(const Endpoint: string; const QueryParams: string = ''): string;
     function BuildHeaders: TArray<TNetHeader>;
+    function BuildAuthorizationHeader: TArray<TNetHeader>;
     function ExecuteRequest(const Method: string; const Url: string; const Body: string = ''): TJSONObject;
     function ParseResponse(const StatusCode: Integer; const ResponseText: string): TJSONObject;
     function ParseErrorResponse(const StatusCode: Integer; const ResponseText: string): TJSONObject;
@@ -43,7 +47,9 @@ type
       LogDebug = 'DEBUG';
       LogError = 'ERROR';
   public
-    constructor Create(const AccessToken: string; const LogProc: TLogProc = nil);
+    constructor Create(const AccessToken: string; const LogProc: TLogProc = nil); overload;
+    constructor Create(const AccessToken: string; const Transport: IGraphHttpTransport;
+      const LogProc: TLogProc = nil); overload;
 
     function Get(const Endpoint: string; const QueryParams: string = ''): TJSONObject;
     function GetRawBytes(const Endpoint: string): TBytes;
@@ -71,16 +77,29 @@ type
 implementation
 
 uses
-  System.Classes,
   System.NetEncoding,
-  System.Net.HttpClient,
-  MSGraph.Graph.JsonHelper;
+  MSGraph.Graph.JsonHelper,
+  MSGraph.Graph.Http.Transport;
 
 constructor TGraphHttpClient.Create(const AccessToken: string; const LogProc: TLogProc);
 begin
   inherited Create;
   FAccessToken := AccessToken;
   FLogProc := LogProc;
+  FTransport := TNetHttpTransport.Create;
+end;
+
+constructor TGraphHttpClient.Create(const AccessToken: string; const Transport: IGraphHttpTransport;
+  const LogProc: TLogProc);
+begin
+  inherited Create;
+
+  if not Assigned(Transport) then
+    raise EGraphApiException.Create('No HTTP transport provided.');
+
+  FAccessToken := AccessToken;
+  FLogProc := LogProc;
+  FTransport := Transport;
 end;
 
 procedure TGraphHttpClient.Log(const Level: string; const Message: string);
@@ -110,6 +129,12 @@ begin
 
   for var Index := 0 to ExtraCount - 1 do
     Result[BaseCount + Index] := FExtraHeaders[Index];
+end;
+
+function TGraphHttpClient.BuildAuthorizationHeader: TArray<TNetHeader>;
+begin
+  SetLength(Result, 1);
+  Result[0] := TNetHeader.Create(HeaderAuthorization, BearerPrefix + FAccessToken);
 end;
 
 procedure TGraphHttpClient.ValidateAccessToken;
@@ -184,45 +209,18 @@ function TGraphHttpClient.ExecuteRequest(const Method: string; const Url: string
 begin
   ValidateAccessToken;
 
-  var HttpClient := THTTPClient.Create;
-  try
-    var Headers := BuildHeaders;
-    var Response: IHTTPResponse;
+  var Request := Default(TGraphHttpRequest);
+  Request.Method := Method;
+  Request.Url := Url;
+  Request.Body := Body;
 
-    if Method = MethodGet then
-      Response := HttpClient.Get(Url, nil, Headers)
-    else if Method = MethodPost then
-    begin
-      var Content: TStringStream := nil;
-      if not Body.IsEmpty then
-        Content := TStringStream.Create(Body, TEncoding.UTF8);
-      try
-        Response := HttpClient.Post(Url, Content, nil, Headers);
-      finally
-        Content.Free;
-      end;
-    end
-    else if Method = MethodPatch then
-    begin
-      var Content := TStringStream.Create(Body, TEncoding.UTF8);
-      try
-        Response := HttpClient.Patch(Url, Content, nil, Headers);
-      finally
-        Content.Free;
-      end;
-    end
-    else if Method = MethodDelete then
-    begin
-      HttpClient.CustomHeaders[HeaderAuthorization] := BearerPrefix + FAccessToken;
-      Response := HttpClient.Delete(Url);
-    end
-    else
-      raise EGraphApiException.Create('Unsupported HTTP method: ' + Method);
+  if Method = MethodDelete then
+    Request.Headers := BuildAuthorizationHeader
+  else
+    Request.Headers := BuildHeaders;
 
-    Result := ParseResponse(Response.StatusCode, Response.ContentAsString(TEncoding.UTF8));
-  finally
-    HttpClient.Free;
-  end;
+  var Response := FTransport.Execute(Request);
+  Result := ParseResponse(Response.StatusCode, Response.Content);
 end;
 
 function TGraphHttpClient.Get(const Endpoint: string; const QueryParams: string): TJSONObject;
@@ -239,27 +237,16 @@ begin
   var Url := BuildUrl(Endpoint);
   Log(LogDebug, MethodGet + ' ' + Url + ' (raw)');
 
-  var HttpClient := THTTPClient.Create;
-  try
-    var ResponseStream := TBytesStream.Create;
-    try
-      var Headers: TArray<TNetHeader>;
-      SetLength(Headers, 1);
-      Headers[0] := TNetHeader.Create(HeaderAuthorization, BearerPrefix + FAccessToken);
+  var Request := Default(TGraphHttpRequest);
+  Request.Method := MethodGet;
+  Request.Url := Url;
+  Request.Headers := BuildAuthorizationHeader;
 
-      var Response := HttpClient.Get(Url, ResponseStream, Headers);
-      const IsSuccess = (Response.StatusCode >= 200) and (Response.StatusCode < 300);
-      if not IsSuccess then
-        raise EGraphApiException.Create(Format('HTTP %d fetching raw content', [Response.StatusCode]));
+  var Response := FTransport.ExecuteBinary(Request);
+  if not Response.IsSuccess then
+    raise EGraphApiException.Create(Format('HTTP %d fetching raw content', [Response.StatusCode]));
 
-      Result := ResponseStream.Bytes;
-      SetLength(Result, ResponseStream.Size);
-    finally
-      ResponseStream.Free;
-    end;
-  finally
-    HttpClient.Free;
-  end;
+  Result := Response.ContentBytes;
 end;
 
 function TGraphHttpClient.GetWithHeaders(const Endpoint: string; const QueryParams: string;
