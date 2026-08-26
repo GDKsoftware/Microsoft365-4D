@@ -13,9 +13,9 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   {$ENDIF }
   DUnitX.TestFramework,
-  MSGraph.Graph.Http.Transport.Fake in '..\Source\Graph\MSGraph.Graph.Http.Transport.Fake.pas',
-  MSGraph.Graph.Http.Tests in '..\Source\Graph\MSGraph.Graph.Http.Tests.pas',
-  MSGraph.Graph.Mail.Tests in '..\Source\Graph\MSGraph.Graph.Mail.Tests.pas';
+  MSGraph.Graph.Http.Transport.Fake in 'MSGraph.Graph.Http.Transport.Fake.pas',
+  MSGraph.Graph.Http.Tests in 'MSGraph.Graph.Http.Tests.pas',
+  MSGraph.Graph.Mail.Tests in 'MSGraph.Graph.Mail.Tests.pas';
 
 { keep comment here to protect the following conditional from being removed by the IDE when adding a unit }
 {$IFNDEF TESTINSIGHT}
