@@ -11,9 +11,6 @@ uses
   MSGraph.Graph.Mail.Interfaces;
 
 type
-  EDeltaLinkExpiredException = class(EGraphApiException);
-  EInvalidMailHeaderException = class(EMSGraphException);
-
   TMailClient = class(TInterfacedObject, IMailClient)
   strict private
     FGraphClient: TGraphHttpClient;
@@ -22,6 +19,9 @@ type
     function BuildRecipientArray(const Recipients: TArray<string>): TJSONArray;
     function BuildInternetMessageHeaders(const Headers: TArray<TMailHeader>): TJSONArray;
     class function ContainsControlCharacter(const Value: string): Boolean; static;
+    class function ContainsInvalidNameCharacter(const Value: string): Boolean; static;
+    class function IsDuplicateHeaderName(const Headers: TArray<TMailHeader>;
+      const HeaderIndex: Integer): Boolean; static;
     class procedure ValidateCustomHeaders(const Headers: TArray<TMailHeader>); static;
     function BuildMessageBody(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
@@ -54,6 +54,13 @@ type
       ContentTypeText = 'Text';
       CustomHeaderPrefix = 'x-';
       MaxCustomHeaders = 5;
+      HeaderNameSeparator = ':';
+      PrintableAsciiFirst = '!';
+      PrintableAsciiLast = '~';
+      UnicodeLineSeparator = #$2028;
+      UnicodeParagraphSeparator = #$2029;
+      UnreadMarker = 'is:unread';
+      IsReadFalseMarker = 'isread:false';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
   public
@@ -101,6 +108,7 @@ type
 implementation
 
 uses
+  System.Character,
   System.NetEncoding,
   MSGraph.Graph.JsonHelper;
 
@@ -154,42 +162,102 @@ class function TMailClient.ContainsControlCharacter(const Value: string): Boolea
 begin
   Result := False;
   for var Character in Value do
-    if Character < ' ' then
-      Exit(True);
+  begin
+    const IsControlCharacter = Character.IsControl;
+    const IsUnicodeSeparator = (Character = UnicodeLineSeparator) or (Character = UnicodeParagraphSeparator);
+    if IsControlCharacter or IsUnicodeSeparator then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+class function TMailClient.ContainsInvalidNameCharacter(const Value: string): Boolean;
+begin
+  Result := False;
+  for var Character in Value do
+  begin
+    const IsPrintableAscii = (Character >= PrintableAsciiFirst) and (Character <= PrintableAsciiLast);
+    const IsAllowed = IsPrintableAscii and (Character <> HeaderNameSeparator);
+    if not IsAllowed then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+class function TMailClient.IsDuplicateHeaderName(const Headers: TArray<TMailHeader>;
+  const HeaderIndex: Integer): Boolean;
+begin
+  Result := False;
+  for var Index := Low(Headers) to High(Headers) do
+  begin
+    const IsOwnIndex = (Index = HeaderIndex);
+    if IsOwnIndex then
+      Continue;
+
+    const HasSameName = SameText(Headers[Index].Name, Headers[HeaderIndex].Name);
+    if HasSameName then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
 end;
 
 class procedure TMailClient.ValidateCustomHeaders(const Headers: TArray<TMailHeader>);
 begin
-  if Length(Headers) > MaxCustomHeaders then
+  const HasTooManyHeaders = (Length(Headers) > MaxCustomHeaders);
+  if HasTooManyHeaders then
+  begin
     raise EInvalidMailHeaderException.CreateFmt(
       'A message accepts at most %d custom mail headers, but %d were supplied.',
       [MaxCustomHeaders, Length(Headers)]);
+  end;
 
   for var Index := Low(Headers) to High(Headers) do
   begin
     const Header = Headers[Index];
+    const TrimmedName = Header.Name.Trim;
 
-    if Header.Name.Trim.IsEmpty then
+    const HasEmptyName = TrimmedName.IsEmpty;
+    if HasEmptyName then
+    begin
       raise EInvalidMailHeaderException.Create('A custom mail header name must not be empty.');
+    end;
 
-    if not Header.Name.ToLower.StartsWith(CustomHeaderPrefix) then
+    const HasCustomPrefix = Header.Name.StartsWith(CustomHeaderPrefix, True);
+    if not HasCustomPrefix then
+    begin
       raise EInvalidMailHeaderException.CreateFmt(
         'Custom mail header "%s" is not allowed: a custom header name must start with "%s".',
         [Header.Name, CustomHeaderPrefix]);
+    end;
 
-    if ContainsControlCharacter(Header.Name) then
+    const HasInvalidNameCharacter = ContainsInvalidNameCharacter(Header.Name);
+    if HasInvalidNameCharacter then
+    begin
       raise EInvalidMailHeaderException.CreateFmt(
-        'Custom mail header "%s" must not contain line breaks or control characters.', [Header.Name]);
+        'Custom mail header "%s" must contain printable characters only, and no "%s".',
+        [Header.Name, HeaderNameSeparator]);
+    end;
 
-    if ContainsControlCharacter(Header.Value) then
+    const HasControlCharacterInValue = ContainsControlCharacter(Header.Value);
+    if HasControlCharacterInValue then
+    begin
       raise EInvalidMailHeaderException.CreateFmt(
         'The value of custom mail header "%s" must not contain line breaks or control characters.',
         [Header.Name]);
+    end;
 
-    for var Earlier := Low(Headers) to Index - 1 do
-      if SameText(Headers[Earlier].Name, Header.Name) then
-        raise EInvalidMailHeaderException.CreateFmt(
-          'Custom mail header "%s" is specified more than once.', [Header.Name]);
+    const HasDuplicateName = IsDuplicateHeaderName(Headers, Index);
+    if HasDuplicateName then
+    begin
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" is specified more than once.', [Header.Name]);
+    end;
   end;
 end;
 
@@ -355,13 +423,17 @@ function TMailClient.SearchMessages(const Query: string; const FolderId: string;
 begin
   Result := Default(TSearchMessagesResult);
 
-  const FilterUnread = (Query.ToLower.Contains('is:unread') or Query.ToLower.Contains('isread:false'));
+  const LoweredQuery = Query.ToLower;
+  const HasUnreadMarker = LoweredQuery.Contains(UnreadMarker);
+  const HasIsReadFalseMarker = LoweredQuery.Contains(IsReadFalseMarker);
+  const FilterUnread = HasUnreadMarker or HasIsReadFalseMarker;
+
   var SearchQuery := Query;
 
   if FilterUnread then
   begin
-    SearchQuery := SearchQuery.Replace('is:unread', '', [rfReplaceAll, rfIgnoreCase]);
-    SearchQuery := SearchQuery.Replace('isread:false', '', [rfReplaceAll, rfIgnoreCase]);
+    SearchQuery := SearchQuery.Replace(UnreadMarker, '', [rfReplaceAll, rfIgnoreCase]);
+    SearchQuery := SearchQuery.Replace(IsReadFalseMarker, '', [rfReplaceAll, rfIgnoreCase]);
     SearchQuery := SearchQuery.Trim;
   end;
 

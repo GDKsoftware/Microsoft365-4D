@@ -151,7 +151,18 @@ var Draft := Mail.CreateDraft('Subject', 'Body', ['recipient@company.com'], [], 
 Mail.SendDraft(Draft.Id);
 ```
 
-Microsoft Graph requires a custom header name to start with `x-`, and accepts at most five custom headers per message. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when there are more than five, or when a name is empty, lacks the `x-` prefix, is supplied more than once, or contains control characters in its name or value.
+Microsoft Graph requires a custom header name to start with `x-`, and accepts at most five custom headers per message. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when a rule is broken:
+
+| Rule | Rejected example |
+|------|------------------|
+| At most five custom headers per message | six headers |
+| The name must not be empty | `''` |
+| The name must start with `x-` (case insensitive) | `Example-Id` |
+| The name may contain printable ASCII only, and no `:` | `x-example-id:42`, `x-example-id ` |
+| The value must not contain control characters or line separators | `42<CR><LF>x-injected: yes` |
+| The same name must not be supplied twice (case insensitive) | `x-example-id` and `X-Example-Id` |
+
+Names are sent exactly as supplied — the library does not change their casing.
 
 Graph accepts `internetMessageHeaders` only when a message is created, so `UpdateDraft` does not offer this parameter.
 
@@ -200,6 +211,7 @@ All library exceptions inherit from `EMSGraphException`:
 | `EGraphApiException` | Graph API HTTP errors, missing access token |
 | `ETokenStoreException` | Missing tokens, expired PKCE sessions |
 | `EInvalidMailHeaderException` | Invalid custom mail header supplied by the caller |
+| `EDeltaLinkExpiredException` | An expired delta link, so a full resynchronisation is needed |
 
 ### TMailClient
 
