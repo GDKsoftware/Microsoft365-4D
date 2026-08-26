@@ -110,7 +110,8 @@ implementation
 uses
   System.Character,
   System.NetEncoding,
-  MSGraph.Graph.JsonHelper;
+  MSGraph.Graph.JsonHelper,
+  MSGraph.Graph.Mail.Attachments;
 
 constructor TMailClient.Create(const AccessToken: string; const LogProc: TLogProc);
 begin
@@ -903,23 +904,12 @@ end;
 function TMailClient.AddAttachment(const MessageId, FileName, ContentType: string;
   const ContentBytes: TBytes): Boolean;
 begin
-  var AttachmentObj := TJSONObject.Create;
+  var Uploader := TAttachmentUploader.Create(FGraphClient);
   try
-    AttachmentObj.AddPair('@odata.type', '#microsoft.graph.fileAttachment');
-    AttachmentObj.AddPair('name', FileName);
-    AttachmentObj.AddPair('contentType', ContentType);
-    AttachmentObj.AddPair('contentBytes', TNetEncoding.Base64.EncodeBytesToString(ContentBytes));
-
-    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/attachments', AttachmentObj.ToJSON);
-    try
-      Result := not TGraphJson.HasError(Response);
-      if not Result then
-        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-    finally
-      Response.Free;
-    end;
+    Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
+    Result := True;
   finally
-    AttachmentObj.Free;
+    Uploader.Free;
   end;
 end;
 

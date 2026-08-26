@@ -90,7 +90,9 @@
         </DelphiCompile>
         <DCCReference Include="MSGraph.Graph.Http.Transport.Fake.pas"/>
         <DCCReference Include="MSGraph.Graph.Http.Tests.pas"/>
+        <DCCReference Include="MSGraph.Graph.Http.Redaction.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Mail.Tests.pas"/>
+        <DCCReference Include="MSGraph.Graph.Mail.Attachments.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

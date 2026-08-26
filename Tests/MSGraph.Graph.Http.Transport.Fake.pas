@@ -4,6 +4,7 @@ interface
 
 uses
   System.SysUtils,
+  System.Net.URLClient,
   MSGraph.Graph.Http.Types,
   MSGraph.Graph.Http.Interfaces;
 
@@ -11,6 +12,8 @@ type
   IFakeGraphHttpTransport = interface(IGraphHttpTransport)
     ['{DDE14D52-A795-4C90-A1E4-7F2CCAB873CD}']
     procedure EnqueueResponse(const StatusCode: Integer; const Content: string);
+    procedure EnqueueResponseWithHeaders(const StatusCode: Integer; const Content: string;
+      const Headers: TArray<TNetHeader>);
     procedure EnqueueBinaryResponse(const StatusCode: Integer; const ContentBytes: TBytes);
 
     function RequestCount: Integer;
@@ -28,6 +31,8 @@ type
     function TakeNextResponse(const Request: TGraphHttpRequest): TGraphHttpResponse;
   public
     procedure EnqueueResponse(const StatusCode: Integer; const Content: string);
+    procedure EnqueueResponseWithHeaders(const StatusCode: Integer; const Content: string;
+      const Headers: TArray<TNetHeader>);
     procedure EnqueueBinaryResponse(const StatusCode: Integer; const ContentBytes: TBytes);
 
     function RequestCount: Integer;
@@ -43,9 +48,16 @@ implementation
 
 procedure TFakeGraphHttpTransport.EnqueueResponse(const StatusCode: Integer; const Content: string);
 begin
+  EnqueueResponseWithHeaders(StatusCode, Content, nil);
+end;
+
+procedure TFakeGraphHttpTransport.EnqueueResponseWithHeaders(const StatusCode: Integer;
+  const Content: string; const Headers: TArray<TNetHeader>);
+begin
   var Response := Default(TGraphHttpResponse);
   Response.StatusCode := StatusCode;
   Response.Content := Content;
+  Response.Headers := Headers;
 
   FResponses := FResponses + [Response];
 end;

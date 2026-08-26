@@ -41,6 +41,15 @@ type
     procedure EmptyAccessToken_RaisesBeforeReachingTransport;
     [Test]
     procedure NoTransport_RaisesGraphApiException;
+
+    [Test]
+    procedure PostRaw_ReturnsStatusCodeAndUnparsedBody;
+    [Test]
+    procedure PutAbsoluteUrlBytes_SendsBytesWithContentRangeAndWithoutAuthorization;
+    [Test]
+    procedure DeleteAbsoluteUrl_SendsWithoutAuthorization;
+    [Test]
+    procedure ResponseHeaderValue_IgnoresCaseAndReturnsEmptyWhenAbsent;
   end;
 
 implementation
@@ -48,14 +57,22 @@ implementation
 uses
   System.SysUtils,
   System.JSON,
+  System.Net.URLClient,
   MSGraph.OAuth2.Types,
 
+  MSGraph.Graph.Http.Types,
   MSGraph.Graph.Http.Interfaces;
 
 const
   DummyAccessToken = 'unit-test-token';
   ExpectedAuthorization = 'Bearer ' + DummyAccessToken;
   SharedMailbox = 'shared@example.com';
+  UploadUrl = 'https://outlook.office.com/api/v2.0/AttachmentSessions?authtoken=SECRET';
+  UploadContentRange = 'bytes 0-2/3';
+  HeaderContentType = 'Content-Type';
+  HeaderContentRange = 'Content-Range';
+  HeaderAuthorization = 'Authorization';
+  HeaderAnchorMailbox = 'X-AnchorMailbox';
 
 procedure TGraphHttpClientTests.Setup;
 begin
@@ -207,6 +224,60 @@ begin
       TGraphHttpClient.Create(DummyAccessToken, IGraphHttpTransport(nil)).Free;
     end,
     EGraphApiException);
+end;
+
+procedure TGraphHttpClientTests.PostRaw_ReturnsStatusCodeAndUnparsedBody;
+begin
+  const Payload = '{"error":{"code":"ErrorCode","message":"Something went wrong"}}';
+  FFake.EnqueueResponse(413, Payload);
+
+  const Response = FClient.PostRaw('/me/messages/MSG-1/attachments', '{}');
+
+  Assert.AreEqual(413, Response.StatusCode, 'the raw variant keeps the status code');
+  Assert.AreEqual(Payload, Response.Content, 'the raw variant keeps the untouched body');
+  Assert.IsFalse(Response.IsSuccess);
+end;
+
+procedure TGraphHttpClientTests.PutAbsoluteUrlBytes_SendsBytesWithContentRangeAndWithoutAuthorization;
+begin
+  FClient.MailboxAddress := SharedMailbox;
+  FFake.EnqueueResponse(200, '{}');
+
+  const Payload: TBytes = [1, 2, 3];
+  FClient.PutAbsoluteUrlBytes(UploadUrl, Payload, UploadContentRange);
+
+  Assert.AreEqual('PUT', FFake.LastRequest.Method);
+  Assert.AreEqual(UploadUrl, FFake.LastRequest.Url, 'the upload url is used verbatim');
+  Assert.AreEqual(3, Length(FFake.LastRequest.BodyBytes));
+  Assert.AreEqual(2, Length(FFake.LastRequest.Headers),
+    'an upload sends Content-Type and Content-Range only');
+  Assert.AreEqual('application/octet-stream', FFake.HeaderValue(0, HeaderContentType));
+  Assert.AreEqual(UploadContentRange, FFake.HeaderValue(0, HeaderContentRange));
+  Assert.AreEqual('', FFake.HeaderValue(0, HeaderAuthorization),
+    'the upload url is pre-authenticated');
+  Assert.AreEqual('', FFake.HeaderValue(0, HeaderAnchorMailbox),
+    'the upload url is not a Graph endpoint');
+end;
+
+procedure TGraphHttpClientTests.DeleteAbsoluteUrl_SendsWithoutAuthorization;
+begin
+  FFake.EnqueueResponse(204, '');
+
+  FClient.DeleteAbsoluteUrl(UploadUrl);
+
+  Assert.AreEqual('DELETE', FFake.LastRequest.Method);
+  Assert.AreEqual(UploadUrl, FFake.LastRequest.Url);
+  Assert.AreEqual(0, Length(FFake.LastRequest.Headers),
+    'cancelling an upload session needs no headers at all');
+end;
+
+procedure TGraphHttpClientTests.ResponseHeaderValue_IgnoresCaseAndReturnsEmptyWhenAbsent;
+begin
+  var Response := Default(TGraphHttpResponse);
+  Response.Headers := [TNetHeader.Create('Location', 'https://example.com/attachment')];
+
+  Assert.AreEqual('https://example.com/attachment', Response.HeaderValue('location'));
+  Assert.AreEqual('', Response.HeaderValue(HeaderContentRange));
 end;
 
 initialization

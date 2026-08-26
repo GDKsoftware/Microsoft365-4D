@@ -7,6 +7,7 @@ uses
 
 type
   EInvalidMailHeaderException = class(EMSGraphException);
+  EInvalidAttachmentException = class(EMSGraphException);
   EDeltaLinkExpiredException = class(EGraphApiException);
 
   TEmailAddress = record
