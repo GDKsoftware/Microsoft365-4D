@@ -6,6 +6,7 @@
 *.bpi
 *.dcp
 *.so
+*.a
 *.dylib
 *.drc
 *.map
