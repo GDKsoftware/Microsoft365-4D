@@ -92,6 +92,9 @@
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Contacts.Interfaces.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Contacts.Types.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Contacts.pas"/>
+        <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Interfaces.pas"/>
+        <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Types.pas"/>
+        <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Transport.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.JsonHelper.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Mail.Interfaces.pas"/>
