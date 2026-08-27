@@ -193,6 +193,10 @@ When a chunk fails, the library cancels the upload session and raises `EGraphApi
 
 A connection that drops halfway is treated the same way. The transport error is caught, the upload session is cancelled, and an `EGraphApiException` naming the file, its size, the byte range that was in flight and the original error message is raised in its place, so a caller never sees a bare socket error and never leaves an upload session behind.
 
+Cancelling that session can itself fail. When the `DELETE` answers with a non-success status or does not answer at all, that is logged and appended to the exception the caller already gets, rather than replacing it: the reason the upload failed stays the headline, and the fact that a session was left behind at Microsoft is visible right after it.
+
+The last `PUT` of a successful upload answers `HTTP 201 Created` with a `Location` header holding the attachment id. If that header is missing or holds no id, `EGraphApiException` is raised as well. The upload itself did succeed in that case, and the message says so: the attachment is on the draft, but its id could not be determined, so a caller that needs the id to remove or inspect the attachment later is told instead of being handed an empty string. The upload session is not cancelled, because there is nothing left to cancel.
+
 150 MB is the ceiling Graph accepts, not the ceiling that will actually be delivered. The effective limit is the message size limit of the mailbox, 35 MB by default in Exchange Online. An upload above that limit can succeed and still fail later, at `SendDraft`.
 
 `Mail.ReadWrite` is required to create the upload session; `Mail.Send` remains required to send the draft.

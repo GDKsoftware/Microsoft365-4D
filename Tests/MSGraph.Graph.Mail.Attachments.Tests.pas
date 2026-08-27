@@ -75,7 +75,11 @@ type
     procedure Upload_FinalChunk_ReturnsAttachmentIdFromLocationHeader;
 
     [Test]
+    procedure Upload_FinalChunkWithoutLocation_ReportsUnknownAttachmentId;
+    [Test]
     procedure Upload_ChunkFails_CancelsSessionAndReportsByteRange;
+    [Test]
+    procedure Upload_CancellingSessionFails_ReportsBothFailures;
     [Test]
     procedure Upload_ConnectionDropsMidUpload_CancelsSessionAndReportsByteRange;
     [Test]
@@ -466,6 +470,40 @@ begin
   finally
     Uploader.Free;
   end;
+end;
+
+procedure TAttachmentUploadTests.Upload_FinalChunkWithoutLocation_ReportsUnknownAttachmentId;
+begin
+  EnqueueUploadSession;
+  FFake.EnqueueResponse(201, '');
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, 'its id is unknown');
+  AssertContains(ErrorMessage, 'The attachment is on the draft');
+
+  Assert.AreEqual(2, FFake.RequestCount,
+    'the upload itself succeeded, so the session must not be cancelled');
+  AssertNoSendRequest;
+end;
+
+procedure TAttachmentUploadTests.Upload_CancellingSessionFails_ReportsBothFailures;
+begin
+  EnqueueUploadSession;
+  FFake.EnqueueResponse(500, ErrorResponse('InternalServerError', 'Something went wrong'));
+  FFake.EnqueueResponse(404, ErrorResponse('ErrorItemNotFound', 'The upload session was not found'));
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, 'HTTP 500');
+  AssertContains(ErrorMessage, 'Cancelling the upload session failed as well');
+  AssertContains(ErrorMessage, 'HTTP 404');
+  AssertContains(LoggedText, 'Could not cancel the upload session');
+
+  Assert.AreEqual(3, FFake.RequestCount, 'one chunk, then the cancellation attempt');
+  AssertRequest(2, MethodDelete, UploadUrl);
+  AssertNoSendRequest;
 end;
 
 procedure TAttachmentUploadTests.Upload_ChunkFails_CancelsSessionAndReportsByteRange;

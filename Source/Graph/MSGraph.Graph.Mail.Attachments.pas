@@ -70,6 +70,8 @@ type
       const ResumeOffset, TotalSize: Int64);
     procedure FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
       const TotalSize: Int64);
+    procedure FailMissingAttachmentId(const FileName: string; const TotalSize: Int64);
+    function CancellationNote(const UploadUrl: string): string;
     procedure CancelUploadSession(const UploadUrl: string);
 
     function IsBelowUploadSessionMinimum(const Response: TGraphHttpResponse): Boolean;
@@ -293,6 +295,9 @@ begin
           const Location = Response.HeaderValue(HeaderLocation);
 
           Result := AttachmentIdFromLocation(Location);
+          if Result.IsEmpty then
+            FailMissingAttachmentId(FileName, TotalSize);
+
           Exit;
         end;
     else
@@ -460,53 +465,77 @@ end;
 procedure TAttachmentUploader.FailChunkUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Response: TGraphHttpResponse);
 begin
-  CancelUploadSession(UploadUrl);
+  const CancelNote = CancellationNote(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
-    'Upload of "%s" (%d bytes) failed at bytes %d-%d: HTTP %d - %s. The draft has not been sent.',
-    [FileName, TotalSize, RangeStart, RangeEnd, Response.StatusCode, ChunkFailureReason(Response)]);
+    'Upload of "%s" (%d bytes) failed at bytes %d-%d: HTTP %d - %s. The draft has not been sent.%s',
+    [FileName, TotalSize, RangeStart, RangeEnd, Response.StatusCode, ChunkFailureReason(Response),
+     CancelNote]);
 end;
 
 procedure TAttachmentUploader.FailInterruptedUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Error: Exception);
 begin
-  CancelUploadSession(UploadUrl);
+  const CancelNote = CancellationNote(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
-    'Upload of "%s" (%d bytes) was interrupted at bytes %d-%d: %s. The draft has not been sent.',
-    [FileName, TotalSize, RangeStart, RangeEnd, Error.Message]);
+    'Upload of "%s" (%d bytes) was interrupted at bytes %d-%d: %s. The draft has not been sent.%s',
+    [FileName, TotalSize, RangeStart, RangeEnd, Error.Message, CancelNote]);
 end;
 
 procedure TAttachmentUploader.FailStalledUpload(const UploadUrl: string; const FileName: string;
   const ResumeOffset, TotalSize: Int64);
 begin
-  CancelUploadSession(UploadUrl);
+  const CancelNote = CancellationNote(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) stalled: the server asked to resume at byte %d, which is not past ' +
-    'the bytes already sent. The draft has not been sent.',
-    [FileName, TotalSize, ResumeOffset]);
+    'the bytes already sent. The draft has not been sent.%s',
+    [FileName, TotalSize, ResumeOffset, CancelNote]);
 end;
 
 procedure TAttachmentUploader.FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
   const TotalSize: Int64);
 begin
-  CancelUploadSession(UploadUrl);
+  const CancelNote = CancellationNote(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) sent every byte but was never confirmed by the server. ' +
-    'The draft has not been sent.', [FileName, TotalSize]);
+    'The draft has not been sent.%s', [FileName, TotalSize, CancelNote]);
+end;
+
+procedure TAttachmentUploader.FailMissingAttachmentId(const FileName: string; const TotalSize: Int64);
+begin
+  raise EGraphApiException.CreateFmt(
+    'Upload of "%s" (%d bytes) was accepted, but the server did not report where the attachment ' +
+    'ended up, so its id is unknown. The attachment is on the draft; the draft has not been sent.',
+    [FileName, TotalSize]);
+end;
+
+function TAttachmentUploader.CancellationNote(const UploadUrl: string): string;
+begin
+  Result := '';
+
+  try
+    CancelUploadSession(UploadUrl);
+  except
+    on E: Exception do
+    begin
+      FGraphClient.Log(LogLevelError,
+        Format('Could not cancel the upload session: %s', [E.Message]));
+
+      Result := Format(' Cancelling the upload session failed as well: %s', [E.Message]);
+    end;
+  end;
 end;
 
 procedure TAttachmentUploader.CancelUploadSession(const UploadUrl: string);
 begin
-  try
-    FGraphClient.DeleteAbsoluteUrl(UploadUrl);
-  except
-    on E: Exception do
-      FGraphClient.Log(LogLevelError,
-        Format('Could not cancel the upload session: %s', [E.Message]));
-  end;
+  const Response = FGraphClient.DeleteAbsoluteUrl(UploadUrl);
+
+  if not Response.IsSuccess then
+    raise EGraphApiException.CreateFmt('the server answered HTTP %d - %s',
+      [Response.StatusCode, FailureReason(Response)]);
 end;
 
 function TAttachmentUploader.IsBelowUploadSessionMinimum(const Response: TGraphHttpResponse): Boolean;
