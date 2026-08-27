@@ -303,6 +303,10 @@ The included `TTokenStore` stores tokens **in-memory only** and is intended for 
 
 MIT License. See [LICENSE](LICENSE) for details.
 
+## Commercial Support
+
+This library is MIT licensed and free to use. For companies that depend on it commercially we offer support and maintenance agreements with guaranteed response times, and sponsored development of features you need. Contact us at [gdksoftware.com/contact-us](https://gdksoftware.com/contact-us) or open an issue to get in touch.
+
 ## About GDK Software
 
 Microsoft365-4D is developed by [GDK Software](https://gdksoftware.com), a Delphi-focused software company building developer tools, MCP integrations, and enterprise applications.
