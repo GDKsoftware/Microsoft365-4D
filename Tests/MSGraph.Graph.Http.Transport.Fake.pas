@@ -15,6 +15,7 @@ type
     procedure EnqueueResponseWithHeaders(const StatusCode: Integer; const Content: string;
       const Headers: TArray<TNetHeader>);
     procedure EnqueueBinaryResponse(const StatusCode: Integer; const ContentBytes: TBytes);
+    procedure EnqueueTransportFailure(const FailureMessage: string);
 
     function RequestCount: Integer;
     function RequestAt(const Index: Integer): TGraphHttpRequest;
@@ -24,16 +25,26 @@ type
 
   TFakeGraphHttpTransport = class(TInterfacedObject, IFakeGraphHttpTransport)
   strict private
+    type
+      TQueuedResponse = record
+      public
+        Response: TGraphHttpResponse;
+        FailureMessage: string;
+        Fails: Boolean;
+      end;
+  strict private
     FRequests: TArray<TGraphHttpRequest>;
-    FResponses: TArray<TGraphHttpResponse>;
+    FResponses: TArray<TQueuedResponse>;
     FNextResponse: Integer;
 
+    procedure Enqueue(const Response: TGraphHttpResponse);
     function TakeNextResponse(const Request: TGraphHttpRequest): TGraphHttpResponse;
   public
     procedure EnqueueResponse(const StatusCode: Integer; const Content: string);
     procedure EnqueueResponseWithHeaders(const StatusCode: Integer; const Content: string;
       const Headers: TArray<TNetHeader>);
     procedure EnqueueBinaryResponse(const StatusCode: Integer; const ContentBytes: TBytes);
+    procedure EnqueueTransportFailure(const FailureMessage: string);
 
     function RequestCount: Integer;
     function RequestAt(const Index: Integer): TGraphHttpRequest;
@@ -45,6 +56,17 @@ type
   end;
 
 implementation
+
+uses
+  System.Net.HttpClient;
+
+procedure TFakeGraphHttpTransport.Enqueue(const Response: TGraphHttpResponse);
+begin
+  var Queued := Default(TQueuedResponse);
+  Queued.Response := Response;
+
+  FResponses := FResponses + [Queued];
+end;
 
 procedure TFakeGraphHttpTransport.EnqueueResponse(const StatusCode: Integer; const Content: string);
 begin
@@ -59,7 +81,7 @@ begin
   Response.Content := Content;
   Response.Headers := Headers;
 
-  FResponses := FResponses + [Response];
+  Enqueue(Response);
 end;
 
 procedure TFakeGraphHttpTransport.EnqueueBinaryResponse(const StatusCode: Integer; const ContentBytes: TBytes);
@@ -68,7 +90,16 @@ begin
   Response.StatusCode := StatusCode;
   Response.ContentBytes := ContentBytes;
 
-  FResponses := FResponses + [Response];
+  Enqueue(Response);
+end;
+
+procedure TFakeGraphHttpTransport.EnqueueTransportFailure(const FailureMessage: string);
+begin
+  var Queued := Default(TQueuedResponse);
+  Queued.FailureMessage := FailureMessage;
+  Queued.Fails := True;
+
+  FResponses := FResponses + [Queued];
 end;
 
 function TFakeGraphHttpTransport.RequestCount: Integer;
@@ -111,8 +142,13 @@ begin
     raise Exception.CreateFmt('Fake transport: unexpected %s %s (no response queued)',
       [Request.Method, Request.Url]);
 
-  Result := FResponses[FNextResponse];
+  const Queued = FResponses[FNextResponse];
   Inc(FNextResponse);
+
+  if Queued.Fails then
+    raise ENetHTTPClientException.Create(Queued.FailureMessage);
+
+  Result := Queued.Response;
 end;
 
 function TFakeGraphHttpTransport.Execute(const Request: TGraphHttpRequest): TGraphHttpResponse;

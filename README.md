@@ -141,7 +141,7 @@ var Messages := Mail.SearchMessages('*', '', 10, 0);
 
 This requires the `Mail.Read.Shared` and/or `Mail.Send.Shared` delegated permissions in your Azure AD app registration.
 
-One restriction applies to large attachments: with delegated permissions Microsoft Graph refuses to attach a file larger than 3 MB to a message in a shared or delegated mailbox and answers `HTTP 403 Forbidden`. Only the signed-in user's own mailbox works that way. Use application permissions when a shared mailbox has to send large attachments. `AddAttachment` detects this combination and says so in its error message.
+One restriction applies to large attachments: with delegated permissions Microsoft Graph refuses to attach a file larger than 3 MB to a message in a shared or delegated mailbox and answers `HTTP 403 Forbidden`. Only the signed-in user's own mailbox works that way. Use application permissions when a shared mailbox has to send large attachments. When `AddAttachment` gets a `403` on a request against another mailbox, it appends this as a hint to the error message. The hint is only a hint: `MailboxAddress` being set does not prove the mailbox is shared, so Microsoft's own message is always reported alongside it and never replaced.
 
 ### 7. Add Custom Internet Message Headers
 
@@ -191,6 +191,8 @@ An empty file and a file over 150 MB are rejected with `EInvalidAttachmentExcept
 
 When a chunk fails, the library cancels the upload session and raises `EGraphApiException` naming the file, its size, the byte range that failed and the HTTP status. The draft is never sent and is left untouched, so the caller can retry or call `DeleteDraft`. There is no automatic retry: every non-success status ends the upload.
 
+A connection that drops halfway is treated the same way. The transport error is caught, the upload session is cancelled, and an `EGraphApiException` naming the file, its size, the byte range that was in flight and the original error message is raised in its place, so a caller never sees a bare socket error and never leaves an upload session behind.
+
 150 MB is the ceiling Graph accepts, not the ceiling that will actually be delivered. The effective limit is the message size limit of the mailbox, 35 MB by default in Exchange Online. An upload above that limit can succeed and still fail later, at `SendDraft`.
 
 `Mail.ReadWrite` is required to create the upload session; `Mail.Send` remains required to send the draft.
@@ -233,15 +235,17 @@ Examples/
 
 All library exceptions inherit from `EMSGraphException`:
 
-| Exception | Raised by |
-|-----------|-----------|
-| `EMSGraphException` | Base exception for all Microsoft365-4D errors |
-| `EOAuth2Exception` | Token exchange failures, invalid responses |
-| `EGraphApiException` | Graph API HTTP errors, missing access token |
-| `ETokenStoreException` | Missing tokens, expired PKCE sessions |
-| `EInvalidMailHeaderException` | Invalid custom mail header supplied by the caller |
-| `EInvalidAttachmentException` | Attachment that is empty or larger than the supported maximum |
-| `EDeltaLinkExpiredException` | An expired delta link, so a full resynchronisation is needed |
+| Exception | Inherits from | Raised by |
+|-----------|---------------|-----------|
+| `EMSGraphException` | `Exception` | Base exception for all Microsoft365-4D errors |
+| `EOAuth2Exception` | `EMSGraphException` | Token exchange failures, invalid responses |
+| `EGraphApiException` | `EMSGraphException` | Anything that stops a Graph call from succeeding: an HTTP error, a missing access token, an interrupted upload, or a request the library refuses to send |
+| `ETokenStoreException` | `EMSGraphException` | Missing tokens, expired PKCE sessions |
+| `EInvalidMailHeaderException` | `EGraphApiException` | Invalid custom mail header supplied by the caller |
+| `EInvalidAttachmentException` | `EGraphApiException` | Attachment that is empty or larger than the supported maximum |
+| `EDeltaLinkExpiredException` | `EGraphApiException` | An expired delta link, so a full resynchronisation is needed |
+
+The two validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
 
 ### TMailClient
 

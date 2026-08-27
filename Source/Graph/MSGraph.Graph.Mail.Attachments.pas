@@ -45,6 +45,8 @@ type
 
     function UploadChunks(const UploadUrl: string; const FileName: string;
       const ContentBytes: TBytes): string;
+    function SendChunkOrFail(const UploadUrl: string; const FileName: string;
+      const ContentBytes: TBytes; const Offset, ChunkLength, TotalSize: Int64): TGraphHttpResponse;
     function SendChunk(const UploadUrl: string; const ContentBytes: TBytes;
       const Offset, ChunkLength, TotalSize: Int64): TGraphHttpResponse;
     function BuildContentRange(const RangeStart, RangeEnd, TotalSize: Int64): string;
@@ -62,6 +64,8 @@ type
 
     procedure FailChunkUpload(const UploadUrl: string; const FileName: string;
       const RangeStart, RangeEnd, TotalSize: Int64; const Response: TGraphHttpResponse);
+    procedure FailInterruptedUpload(const UploadUrl: string; const FileName: string;
+      const RangeStart, RangeEnd, TotalSize: Int64; const Error: Exception);
     procedure FailStalledUpload(const UploadUrl: string; const FileName: string;
       const ResumeOffset, TotalSize: Int64);
     procedure FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
@@ -109,9 +113,9 @@ const
 
   ErrorCodeAttachmentBelowMinimum = 'ErrorAttachmentSizeShouldNotBeLessThanMinimumSize';
   SessionExpiredReason = 'the upload session has expired';
-  SharedMailboxRestrictionReason = 'Microsoft Graph does not allow large attachments on a shared ' +
-    'or delegated mailbox when the application uses delegated permissions; use application ' +
-    'permissions instead';
+  SharedMailboxRestrictionHint = 'If this is a shared or delegated mailbox: Microsoft Graph does ' +
+    'not allow large attachments there while the application uses delegated permissions, so use ' +
+    'application permissions instead';
 
 constructor TAttachmentUploader.Create(const GraphClient: TGraphHttpClient; const ChunkSize: Integer);
 begin
@@ -278,7 +282,8 @@ begin
     const RemainingBytes = TotalSize - Offset;
     const ChunkLength = Min(Int64(FChunkSize), RemainingBytes);
     const RangeEnd = Offset + ChunkLength - 1;
-    const Response = SendChunk(UploadUrl, ContentBytes, Offset, ChunkLength, TotalSize);
+    const Response = SendChunkOrFail(UploadUrl, FileName, ContentBytes, Offset, ChunkLength,
+                                     TotalSize);
 
     case Response.StatusCode of
       HttpOk:
@@ -294,6 +299,21 @@ begin
   end;
 
   FailUnconfirmedUpload(UploadUrl, FileName, TotalSize);
+end;
+
+function TAttachmentUploader.SendChunkOrFail(const UploadUrl: string; const FileName: string;
+  const ContentBytes: TBytes; const Offset, ChunkLength, TotalSize: Int64): TGraphHttpResponse;
+begin
+  Result := Default(TGraphHttpResponse);
+
+  const RangeEnd = Offset + ChunkLength - 1;
+
+  try
+    Result := SendChunk(UploadUrl, ContentBytes, Offset, ChunkLength, TotalSize);
+  except
+    on E: Exception do
+      FailInterruptedUpload(UploadUrl, FileName, Offset, RangeEnd, TotalSize, E);
+  end;
 end;
 
 function TAttachmentUploader.SendChunk(const UploadUrl: string; const ContentBytes: TBytes;
@@ -433,6 +453,16 @@ begin
     [FileName, TotalSize, RangeStart, RangeEnd, Response.StatusCode, ChunkFailureReason(Response)]);
 end;
 
+procedure TAttachmentUploader.FailInterruptedUpload(const UploadUrl: string; const FileName: string;
+  const RangeStart, RangeEnd, TotalSize: Int64; const Error: Exception);
+begin
+  CancelUploadSession(UploadUrl);
+
+  raise EGraphApiException.CreateFmt(
+    'Upload of "%s" (%d bytes) was interrupted at bytes %d-%d: %s. The draft has not been sent.',
+    [FileName, TotalSize, RangeStart, RangeEnd, Error.Message]);
+end;
+
 procedure TAttachmentUploader.FailStalledUpload(const UploadUrl: string; const FileName: string;
   const ResumeOffset, TotalSize: Int64);
 begin
@@ -484,12 +514,12 @@ end;
 
 function TAttachmentUploader.SessionFailureReason(const Response: TGraphHttpResponse): string;
 begin
-  const IsSharedMailboxRestriction = ((Response.StatusCode = HttpForbidden) and
-                                      FGraphClient.IsSharedMailbox);
-  if IsSharedMailboxRestriction then
-    Exit(SharedMailboxRestrictionReason);
-
   Result := FailureReason(Response);
+
+  const MayBeSharedMailboxRestriction = ((Response.StatusCode = HttpForbidden) and
+                                         FGraphClient.IsSharedMailbox);
+  if MayBeSharedMailboxRestriction then
+    Result := Format('%s (%s)', [Result, SharedMailboxRestrictionHint]);
 end;
 
 function TAttachmentUploader.ChunkFailureReason(const Response: TGraphHttpResponse): string;

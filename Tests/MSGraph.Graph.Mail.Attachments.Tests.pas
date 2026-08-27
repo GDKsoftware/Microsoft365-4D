@@ -77,9 +77,13 @@ type
     [Test]
     procedure Upload_ChunkFails_CancelsSessionAndReportsByteRange;
     [Test]
+    procedure Upload_ConnectionDropsMidUpload_CancelsSessionAndReportsByteRange;
+    [Test]
     procedure Upload_ChunkUnauthorized_ReportsExpiredSessionWithoutRetry;
     [Test]
-    procedure Upload_SharedMailboxForbidden_ReportsSharedMailboxRestriction;
+    procedure Upload_SharedMailboxForbidden_KeepsGraphMessageAndAddsHint;
+    [Test]
+    procedure Upload_OwnMailboxForbidden_ReportsGraphMessageWithoutHint;
     [Test]
     procedure Upload_UploadUrlToken_IsNeverLoggedInFull;
   end;
@@ -124,6 +128,8 @@ const
 
   AttachmentCreatedResponse = '{"id":"attachment-1"}';
   SwitchesOnce = 'the route switches exactly once';
+  ConnectionResetMessage = 'Error receiving data: the connection was reset by the peer';
+  AccessDeniedMessage = 'Access is denied. Check credentials and try again.';
 
 procedure TAttachmentUploadTests.Setup;
 begin
@@ -483,6 +489,26 @@ begin
   AssertNoSendRequest;
 end;
 
+procedure TAttachmentUploadTests.Upload_ConnectionDropsMidUpload_CancelsSessionAndReportsByteRange;
+begin
+  EnqueueUploadSession;
+  EnqueueChunkAccepted(ChunkSize);
+  FFake.EnqueueTransportFailure(ConnectionResetMessage);
+  EnqueueSessionCancelled;
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(TenMegabytes));
+
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, '10485760 bytes');
+  AssertContains(ErrorMessage, 'bytes 3145728-6291455');
+  AssertContains(ErrorMessage, ConnectionResetMessage);
+  AssertContains(ErrorMessage, 'The draft has not been sent.');
+
+  Assert.AreEqual(4, FFake.RequestCount, 'two chunks, then the session is cancelled');
+  AssertRequest(3, MethodDelete, UploadUrl);
+  AssertNoSendRequest;
+end;
+
 procedure TAttachmentUploadTests.Upload_ChunkUnauthorized_ReportsExpiredSessionWithoutRetry;
 begin
   EnqueueUploadSession;
@@ -500,17 +526,31 @@ begin
   AssertNoSendRequest;
 end;
 
-procedure TAttachmentUploadTests.Upload_SharedMailboxForbidden_ReportsSharedMailboxRestriction;
+procedure TAttachmentUploadTests.Upload_SharedMailboxForbidden_KeepsGraphMessageAndAddsHint;
 begin
   FGraphClient.MailboxAddress := SharedMailboxAddress;
 
-  FFake.EnqueueResponse(403, ErrorResponse('ErrorAccessDenied', 'Access is denied'));
+  FFake.EnqueueResponse(403, ErrorResponse('ErrorAccessDenied', AccessDeniedMessage));
 
   const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
 
+  AssertContains(ErrorMessage, AccessDeniedMessage);
+  AssertContains(ErrorMessage, 'HTTP 403');
   AssertContains(ErrorMessage, 'shared');
   AssertContains(ErrorMessage, 'application permissions');
   Assert.AreEqual(1, FFake.RequestCount, 'no session was created, so nothing needs cancelling');
+  AssertNoSendRequest;
+end;
+
+procedure TAttachmentUploadTests.Upload_OwnMailboxForbidden_ReportsGraphMessageWithoutHint;
+begin
+  FFake.EnqueueResponse(403, ErrorResponse('ErrorAccessDenied', AccessDeniedMessage));
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, AccessDeniedMessage);
+  Assert.IsFalse(ErrorMessage.Contains('shared'),
+    'the shared mailbox hint belongs only to a request against another mailbox');
   AssertNoSendRequest;
 end;
 
