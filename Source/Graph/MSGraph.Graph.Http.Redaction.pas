@@ -7,10 +7,12 @@ type
   strict private
     const
       RedactedValue = '***';
+      QueryParameterSeparator = '&';
       SensitiveQueryParameters: array[0..0] of string = ('authtoken');
 
     class function RedactParameter(const Parameter: string): string; static;
-    class function IsSensitive(const Name: string): Boolean; static;
+    class function IsSensitive(const ParameterName: string): Boolean; static;
+
   public
     class function Redact(const Url: string): string; static;
   end;
@@ -31,7 +33,7 @@ begin
   end;
 
   const BaseUrl = Url.Substring(0, QueryStart + 1);
-  const Parameters = Url.Substring(QueryStart + 1).Split(['&']);
+  const Parameters = Url.Substring(QueryStart + 1).Split([QueryParameterSeparator]);
 
   var RedactedParameters: TArray<string>;
   for var Parameter in Parameters do
@@ -39,7 +41,7 @@ begin
     RedactedParameters := RedactedParameters + [RedactParameter(Parameter)];
   end;
 
-  const RedactedQuery = string.Join('&', RedactedParameters);
+  const RedactedQuery = string.Join(QueryParameterSeparator, RedactedParameters);
 
   Result := Format('%s%s', [BaseUrl, RedactedQuery]);
 end;
@@ -64,13 +66,13 @@ begin
   Result := Format('%s=%s', [Name, RedactedValue]);
 end;
 
-class function TGraphUrlRedactor.IsSensitive(const Name: string): Boolean;
+class function TGraphUrlRedactor.IsSensitive(const ParameterName: string): Boolean;
 begin
   Result := False;
 
   for var SensitiveParameter in SensitiveQueryParameters do
   begin
-    if SameText(Name, SensitiveParameter) then
+    if SameText(ParameterName, SensitiveParameter) then
     begin
       Result := True;
       Exit;

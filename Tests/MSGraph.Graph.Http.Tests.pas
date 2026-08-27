@@ -248,7 +248,13 @@ begin
 
   Assert.AreEqual('PUT', FFake.LastRequest.Method);
   Assert.AreEqual(UploadUrl, FFake.LastRequest.Url, 'the upload url is used verbatim');
-  Assert.AreEqual(3, Length(FFake.LastRequest.BodyBytes));
+  const Sent = FFake.LastRequest.BodyBytes;
+  Assert.AreEqual(Length(Payload), Length(Sent), 'the whole payload must be sent');
+  for var Index := 0 to High(Payload) do
+  begin
+    Assert.AreEqual(Payload[Index], Sent[Index],
+      Format('byte %d differs from the payload', [Index]));
+  end;
   Assert.AreEqual(2, Length(FFake.LastRequest.Headers),
     'an upload sends Content-Type and Content-Range only');
   Assert.AreEqual('application/octet-stream', FFake.HeaderValue(0, HeaderContentType));

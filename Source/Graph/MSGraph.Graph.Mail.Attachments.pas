@@ -5,7 +5,8 @@ interface
 uses
   System.SysUtils,
   MSGraph.Graph.Http,
-  MSGraph.Graph.Http.Types;
+  MSGraph.Graph.Http.Types,
+  MSGraph.Graph.Mail.Interfaces;
 
 const
   LargeAttachmentThreshold = 3 * 1024 * 1024;
@@ -13,7 +14,7 @@ const
   DefaultUploadChunkSize = 3 * 1024 * 1024;
 
 type
-  TAttachmentUploader = class
+  TAttachmentUploader = class(TInterfacedObject, IAttachmentUploader)
   strict private
     FGraphClient: TGraphHttpClient;
     FChunkSize: Integer;
@@ -71,7 +72,7 @@ type
     procedure FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
       const TotalSize: Int64);
     procedure FailMissingAttachmentId(const FileName: string; const TotalSize: Int64);
-    function CancellationNote(const UploadUrl: string): string;
+    function TryCancelUploadSession(const UploadUrl: string; out FailureNote: string): Boolean;
     procedure CancelUploadSession(const UploadUrl: string);
 
     function IsBelowUploadSessionMinimum(const Response: TGraphHttpResponse): Boolean;
@@ -81,6 +82,7 @@ type
     function ChunkFailureReason(const Response: TGraphHttpResponse): string;
     function FailureReason(const Response: TGraphHttpResponse): string;
     function ErrorMember(const ResponseContent: string; const MemberName: string): string;
+
   public
     constructor Create(const GraphClient: TGraphHttpClient;
       const ChunkSize: Integer = DefaultUploadChunkSize);
@@ -112,6 +114,9 @@ const
   AttachmentTypeFile = 'file';
   HeaderLocation = 'Location';
   LogLevelError = 'ERROR';
+
+  JsonMemberName = 'name';
+  JsonMemberContentType = 'contentType';
 
   ErrorCodeAttachmentBelowMinimum = 'ErrorAttachmentSizeShouldNotBeLessThanMinimumSize';
   SessionExpiredReason = 'the upload session has expired';
@@ -242,8 +247,8 @@ begin
   var AttachmentObj := TJSONObject.Create;
   try
     AttachmentObj.AddPair('@odata.type', OdataTypeFileAttachment);
-    AttachmentObj.AddPair('name', FileName);
-    AttachmentObj.AddPair('contentType', ContentType);
+    AttachmentObj.AddPair(JsonMemberName, FileName);
+    AttachmentObj.AddPair(JsonMemberContentType, ContentType);
     AttachmentObj.AddPair('contentBytes', TNetEncoding.Base64.EncodeBytesToString(ContentBytes));
 
     Result := AttachmentObj.ToJSON;
@@ -261,8 +266,8 @@ begin
     SessionObj.AddPair('AttachmentItem', AttachmentItem);
 
     AttachmentItem.AddPair('attachmentType', AttachmentTypeFile);
-    AttachmentItem.AddPair('name', FileName);
-    AttachmentItem.AddPair('contentType', ContentType);
+    AttachmentItem.AddPair(JsonMemberName, FileName);
+    AttachmentItem.AddPair(JsonMemberContentType, ContentType);
     AttachmentItem.AddPair('size', TJSONNumber.Create(TotalSize));
 
     Result := SessionObj.ToJSON;
@@ -357,12 +362,15 @@ function TAttachmentUploader.ReportedNextOffset(const ResponseContent: string;
 begin
   Result := FallbackOffset;
 
-  var ResponseObj := TJSONObject.ParseJSONValue(ResponseContent) as TJSONObject;
-  if not Assigned(ResponseObj) then
+  var ParsedContent := TJSONObject.ParseJSONValue(ResponseContent);
+  if not Assigned(ParsedContent) then
     Exit;
 
   try
-    const Ranges = TGraphJson.GetArray(ResponseObj, 'nextExpectedRanges');
+    if not (ParsedContent is TJSONObject) then
+      Exit;
+
+    const Ranges = TGraphJson.GetArray(TJSONObject(ParsedContent), 'nextExpectedRanges');
     const FirstRange = TGraphJson.ArrayString(Ranges, 0);
     if FirstRange.IsEmpty then
       Exit;
@@ -371,7 +379,7 @@ begin
 
     Result := StrToInt64Def(RangeParts[0], FallbackOffset);
   finally
-    ResponseObj.Free;
+    ParsedContent.Free;
   end;
 end;
 
@@ -383,18 +391,18 @@ begin
       'Could not add attachment "%s" (%d bytes) to the draft: HTTP %d - %s.',
       [FileName, TotalSize, Response.StatusCode, FailureReason(Response)]);
 
-  var AttachmentObj := TJSONObject.ParseJSONValue(Response.Content) as TJSONObject;
-  if not Assigned(AttachmentObj) then
-  begin
-    Result := '';
-    Exit;
+  Result := '';
+
+  var ParsedContent := TJSONObject.ParseJSONValue(Response.Content);
+  try
+    if ParsedContent is TJSONObject then
+      Result := TGraphJson.GetString(TJSONObject(ParsedContent), 'id');
+  finally
+    ParsedContent.Free;
   end;
 
-  try
-    Result := TGraphJson.GetString(AttachmentObj, 'id');
-  finally
-    AttachmentObj.Free;
-  end;
+  if Result.IsEmpty then
+    FailMissingAttachmentId(FileName, TotalSize);
 end;
 
 function TAttachmentUploader.UploadUrlOrFail(const Response: TGraphHttpResponse;
@@ -403,15 +411,15 @@ begin
   if not Response.IsSuccess then
     raise EGraphApiException.Create(DescribeSessionFailure(FileName, TotalSize, Response));
 
-  var SessionObj := TJSONObject.ParseJSONValue(Response.Content) as TJSONObject;
-  if not Assigned(SessionObj) then
-    raise EGraphApiException.CreateFmt(
-      'The upload session for "%s" did not return a readable response.', [FileName]);
-
+  var ParsedContent := TJSONObject.ParseJSONValue(Response.Content);
   try
-    Result := TGraphJson.GetString(SessionObj, 'uploadUrl');
+    if not (ParsedContent is TJSONObject) then
+      raise EGraphApiException.CreateFmt(
+        'The upload session for "%s" did not return a readable response.', [FileName]);
+
+    Result := TGraphJson.GetString(TJSONObject(ParsedContent), 'uploadUrl');
   finally
-    SessionObj.Free;
+    ParsedContent.Free;
   end;
 
   if Result.IsEmpty then
@@ -465,7 +473,8 @@ end;
 procedure TAttachmentUploader.FailChunkUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Response: TGraphHttpResponse);
 begin
-  const CancelNote = CancellationNote(UploadUrl);
+  var CancelNote: string;
+  TryCancelUploadSession(UploadUrl, CancelNote);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) failed at bytes %d-%d: HTTP %d - %s. The draft has not been sent.%s',
@@ -476,7 +485,8 @@ end;
 procedure TAttachmentUploader.FailInterruptedUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Error: Exception);
 begin
-  const CancelNote = CancellationNote(UploadUrl);
+  var CancelNote: string;
+  TryCancelUploadSession(UploadUrl, CancelNote);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) was interrupted at bytes %d-%d: %s. The draft has not been sent.%s',
@@ -486,7 +496,8 @@ end;
 procedure TAttachmentUploader.FailStalledUpload(const UploadUrl: string; const FileName: string;
   const ResumeOffset, TotalSize: Int64);
 begin
-  const CancelNote = CancellationNote(UploadUrl);
+  var CancelNote: string;
+  TryCancelUploadSession(UploadUrl, CancelNote);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) stalled: the server asked to resume at byte %d, which is not past ' +
@@ -497,7 +508,8 @@ end;
 procedure TAttachmentUploader.FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
   const TotalSize: Int64);
 begin
-  const CancelNote = CancellationNote(UploadUrl);
+  var CancelNote: string;
+  TryCancelUploadSession(UploadUrl, CancelNote);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) sent every byte but was never confirmed by the server. ' +
@@ -512,19 +524,22 @@ begin
     [FileName, TotalSize]);
 end;
 
-function TAttachmentUploader.CancellationNote(const UploadUrl: string): string;
+function TAttachmentUploader.TryCancelUploadSession(const UploadUrl: string;
+  out FailureNote: string): Boolean;
 begin
-  Result := '';
+  FailureNote := '';
 
   try
     CancelUploadSession(UploadUrl);
+    Result := True;
   except
     on E: Exception do
     begin
       FGraphClient.Log(LogLevelError,
         Format('Could not cancel the upload session: %s', [E.Message]));
 
-      Result := Format(' Cancelling the upload session failed as well: %s', [E.Message]);
+      FailureNote := Format(' Cancelling the upload session failed as well: %s', [E.Message]);
+      Result := False;
     end;
   end;
 end;
@@ -593,18 +608,21 @@ function TAttachmentUploader.ErrorMember(const ResponseContent: string;
 begin
   Result := '';
 
-  var ResponseObj := TJSONObject.ParseJSONValue(ResponseContent) as TJSONObject;
-  if not Assigned(ResponseObj) then
+  var ParsedContent := TJSONObject.ParseJSONValue(ResponseContent);
+  if not Assigned(ParsedContent) then
     Exit;
 
   try
-    const ErrorObj = TGraphJson.GetObject(ResponseObj, 'error');
+    if not (ParsedContent is TJSONObject) then
+      Exit;
+
+    const ErrorObj = TGraphJson.GetObject(TJSONObject(ParsedContent), 'error');
     if not Assigned(ErrorObj) then
       Exit;
 
     Result := TGraphJson.GetString(ErrorObj, MemberName);
   finally
-    ResponseObj.Free;
+    ParsedContent.Free;
   end;
 end;
 

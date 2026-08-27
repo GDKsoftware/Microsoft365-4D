@@ -215,7 +215,7 @@ Source/
     MSGraph.Graph.Http.Redaction.pas      -Masks sensitive query parameters before logging a URL
     MSGraph.Graph.JsonHelper.pas          -JSON parsing utilities (TGraphJson)
     MSGraph.Graph.Mail.Types.pas          -Mail record types (TMailMessage, TMailFolder, etc.)
-    MSGraph.Graph.Mail.Interfaces.pas     -IMailClient interface
+    MSGraph.Graph.Mail.Interfaces.pas     -IMailClient and IAttachmentUploader interfaces
     MSGraph.Graph.Mail.Attachments.pas    -Attachment upload, small route and upload session
     MSGraph.Graph.Mail.pas                -TMailClient implementation
     MSGraph.Graph.Calendar.Types.pas      -Calendar record types (TCalendarEvent, TAttendee, etc.)

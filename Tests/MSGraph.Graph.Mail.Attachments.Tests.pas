@@ -31,6 +31,7 @@ type
     procedure EnqueueSessionCancelled;
 
     function AddAttachment(const ContentBytes: TBytes): Boolean;
+    procedure AddAttachmentWithoutError(const ContentBytes: TBytes);
     function CapturedUploadError(const ContentBytes: TBytes): string;
     procedure AssertRequest(const RequestIndex: Integer; const ExpectedMethod: string;
       const ExpectedUrlSuffix: string);
@@ -38,6 +39,7 @@ type
     procedure AssertContentRange(const RequestIndex: Integer; const ExpectedRange: string);
     procedure AssertNoSendRequest;
     function LoggedText: string;
+
   public
     [Setup]
     procedure Setup;
@@ -74,6 +76,14 @@ type
     [Test]
     procedure Upload_FinalChunk_ReturnsAttachmentIdFromLocationHeader;
 
+    [Test]
+    procedure Upload_ServerNeverConfirms_CancelsSessionAndReports;
+    [Test]
+    procedure Upload_SessionResponseUnreadable_ReportsUnreadableResponse;
+    [Test]
+    procedure Upload_SessionResponseWithoutUploadUrl_ReportsMissingUploadUrl;
+    [Test]
+    procedure Upload_InlineAttachmentRejected_ReportsGraphMessage;
     [Test]
     procedure Upload_FinalChunkWithoutLocation_ReportsUnknownAttachmentId;
     [Test]
@@ -124,6 +134,7 @@ const
   HeaderContentType = 'Content-Type';
   HeaderContentRange = 'Content-Range';
   ExpectedChunkContentType = 'application/octet-stream';
+  BearerPrefix = 'Bearer ';
 
   ChunkSize = 3 * 1024 * 1024;
   TenMegabytes = 10 * 1024 * 1024;
@@ -211,6 +222,16 @@ begin
   Result := FMailClient.AddAttachment(MessageId, AttachmentName, AttachmentContentType, ContentBytes);
 end;
 
+procedure TAttachmentUploadTests.AddAttachmentWithoutError(const ContentBytes: TBytes);
+begin
+  Assert.WillNotRaiseAny(
+    procedure
+    begin
+      AddAttachment(ContentBytes);
+    end,
+    'the upload must complete without raising');
+end;
+
 function TAttachmentUploadTests.CapturedUploadError(const ContentBytes: TBytes): string;
 begin
   Result := '';
@@ -266,7 +287,7 @@ procedure TAttachmentUploadTests.Upload_SmallAttachment_PostsInlineAttachment;
 begin
   FFake.EnqueueResponse(201, AttachmentCreatedResponse);
 
-  Assert.IsTrue(AddAttachment(MakeBytes(SmallAttachmentSize)));
+  AddAttachmentWithoutError(MakeBytes(SmallAttachmentSize));
 
   Assert.AreEqual(1, FFake.RequestCount, 'a small attachment needs a single request');
   AssertRequest(0, MethodPost, AttachmentsSuffix);
@@ -279,7 +300,7 @@ procedure TAttachmentUploadTests.Upload_JustBelowThreshold_PostsInlineAttachment
 begin
   FFake.EnqueueResponse(201, AttachmentCreatedResponse);
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold - 1)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold - 1));
 
   Assert.AreEqual(1, FFake.RequestCount);
   AssertRequest(0, MethodPost, AttachmentsSuffix);
@@ -290,7 +311,7 @@ begin
   EnqueueUploadSession;
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold));
 
   AssertRequest(0, MethodPost, UploadSessionSuffix);
   AssertRequest(1, MethodPut, UploadUrl);
@@ -326,7 +347,7 @@ begin
   EnqueueUploadSession;
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeBytes(1024)));
+  AddAttachmentWithoutError(MakeBytes(1024));
 
   Assert.AreEqual(3, FFake.RequestCount, SwitchesOnce);
   AssertRequest(0, MethodPost, AttachmentsSuffix);
@@ -340,7 +361,7 @@ begin
     'Attachment size must be greater than the minimum size'));
   FFake.EnqueueResponse(201, AttachmentCreatedResponse);
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold));
 
   Assert.AreEqual(2, FFake.RequestCount, SwitchesOnce);
   AssertRequest(0, MethodPost, UploadSessionSuffix);
@@ -355,7 +376,7 @@ begin
   EnqueueChunkAccepted(3 * ChunkSize);
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeBytes(TenMegabytes)));
+  AddAttachmentWithoutError(MakeBytes(TenMegabytes));
 
   Assert.AreEqual(5, FFake.RequestCount, 'one session plus four chunks');
   AssertContentRange(1, 'bytes 0-3145727/10485760');
@@ -365,7 +386,7 @@ begin
 
   Assert.AreEqual(ChunkSize, Length(FFake.RequestAt(1).BodyBytes));
   Assert.AreEqual(TenMegabytes - (3 * ChunkSize), Length(FFake.RequestAt(4).BodyBytes));
-  Assert.AreEqual(Integer((3 * ChunkSize) mod 251), Integer(FFake.RequestAt(4).BodyBytes[0]),
+  Assert.AreEqual(Integer((3 * ChunkSize) mod BytePatternPeriod), Integer(FFake.RequestAt(4).BodyBytes[0]),
     'the last chunk starts at the byte right after the third chunk');
 end;
 
@@ -375,7 +396,7 @@ begin
   EnqueueChunkAccepted(ChunkSize);
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(2 * ChunkSize)));
+  AddAttachmentWithoutError(MakeZeroedBytes(2 * ChunkSize));
 
   const LastRange = Format('bytes %d-%d/%d', [ChunkSize, (2 * ChunkSize) - 1, 2 * ChunkSize]);
 
@@ -392,13 +413,10 @@ begin
   EnqueueChunkAccepted(2 * CustomChunkSize);
   EnqueueChunkCompleted;
 
-  var Uploader := TAttachmentUploader.Create(FGraphClient, CustomChunkSize);
-  try
-    Uploader.Upload(MessageEndpointSuffix, AttachmentName, AttachmentContentType,
-      MakeZeroedBytes(TenMegabytes));
-  finally
-    Uploader.Free;
-  end;
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient, CustomChunkSize);
+
+  Uploader.Upload(MessageEndpointSuffix, AttachmentName, AttachmentContentType,
+    MakeZeroedBytes(TenMegabytes));
 
   const FirstRange = Format('bytes 0-%d/%d', [CustomChunkSize - 1, TenMegabytes]);
   const LastRange = Format('bytes %d-%d/%d',
@@ -417,7 +435,7 @@ begin
   EnqueueChunkAccepted(ServerOffset);
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold));
 
   const ResumedRange = Format('bytes %d-%d/%d',
                               [ServerOffset, LargeAttachmentThreshold - 1, LargeAttachmentThreshold]);
@@ -446,7 +464,11 @@ begin
   EnqueueUploadSession;
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(FFake.HeaderValue(0, HeaderAuthorization), BearerPrefix);
+  Assert.AreEqual(SharedMailboxAddress, FFake.HeaderValue(0, HeaderAnchorMailbox),
+    'the session request is a Graph endpoint and does carry both headers');
 
   Assert.AreEqual('', FFake.HeaderValue(1, HeaderAuthorization),
     'the upload url is pre-authenticated and must not carry a bearer token');
@@ -461,15 +483,71 @@ begin
   EnqueueUploadSession;
   EnqueueChunkCompleted;
 
-  var Uploader := TAttachmentUploader.Create(FGraphClient);
-  try
-    const AttachmentId = Uploader.Upload(MessageEndpointSuffix, AttachmentName,
-      AttachmentContentType, MakeZeroedBytes(LargeAttachmentThreshold));
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
 
-    Assert.AreEqual(ExpectedAttachmentId, AttachmentId);
-  finally
-    Uploader.Free;
-  end;
+  const AttachmentId = Uploader.Upload(MessageEndpointSuffix, AttachmentName,
+    AttachmentContentType, MakeZeroedBytes(LargeAttachmentThreshold));
+
+  Assert.AreEqual(ExpectedAttachmentId, AttachmentId);
+end;
+
+procedure TAttachmentUploadTests.Upload_ServerNeverConfirms_CancelsSessionAndReports;
+begin
+  EnqueueUploadSession;
+  EnqueueChunkAccepted(LargeAttachmentThreshold);
+  EnqueueSessionCancelled;
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, 'never confirmed');
+  AssertContains(ErrorMessage, 'The draft has not been sent.');
+
+  Assert.AreEqual(3, FFake.RequestCount, 'one chunk, then the session is cancelled');
+  AssertRequest(2, MethodDelete, UploadUrl);
+  AssertNoSendRequest;
+end;
+
+procedure TAttachmentUploadTests.Upload_SessionResponseUnreadable_ReportsUnreadableResponse;
+begin
+  FFake.EnqueueResponse(201, 'not json at all');
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, 'did not return a readable response');
+
+  Assert.AreEqual(1, FFake.RequestCount, 'no session was created, so nothing needs cancelling');
+  AssertNoSendRequest;
+end;
+
+procedure TAttachmentUploadTests.Upload_SessionResponseWithoutUploadUrl_ReportsMissingUploadUrl;
+begin
+  FFake.EnqueueResponse(201, '{"expirationDateTime":"2026-08-27T10:00:00Z"}');
+
+  const ErrorMessage = CapturedUploadError(MakeZeroedBytes(LargeAttachmentThreshold));
+
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, 'did not return an upload URL');
+
+  Assert.AreEqual(1, FFake.RequestCount, 'without an upload url there is nothing to cancel');
+  AssertNoSendRequest;
+end;
+
+procedure TAttachmentUploadTests.Upload_InlineAttachmentRejected_ReportsGraphMessage;
+begin
+  FFake.EnqueueResponse(500, ErrorResponse('InternalServerError', 'Something went wrong'));
+
+  const ErrorMessage = CapturedUploadError(MakeBytes(SmallAttachmentSize));
+
+  AssertContains(ErrorMessage, 'Could not add attachment');
+  AssertContains(ErrorMessage, AttachmentName);
+  AssertContains(ErrorMessage, 'HTTP 500');
+  AssertContains(ErrorMessage, 'Something went wrong');
+
+  Assert.AreEqual(1, FFake.RequestCount, 'the inline route does not open a session');
+  AssertRequest(0, MethodPost, AttachmentsSuffix);
+  AssertNoSendRequest;
 end;
 
 procedure TAttachmentUploadTests.Upload_FinalChunkWithoutLocation_ReportsUnknownAttachmentId;
@@ -597,12 +675,15 @@ begin
   EnqueueUploadSession;
   EnqueueChunkCompleted;
 
-  Assert.IsTrue(AddAttachment(MakeZeroedBytes(LargeAttachmentThreshold)));
+  AddAttachmentWithoutError(MakeZeroedBytes(LargeAttachmentThreshold));
 
   const Logged = LoggedText;
   Assert.IsFalse(Logged.Contains(UploadToken),
     Format('the upload token must never reach the log: %s', [Logged]));
   AssertContains(Logged, 'authtoken=***');
 end;
+
+initialization
+  TDUnitX.RegisterTestFixture(TAttachmentUploadTests);
 
 end.

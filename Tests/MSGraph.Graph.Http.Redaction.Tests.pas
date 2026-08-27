@@ -53,4 +53,7 @@ begin
   Assert.AreEqual('https://outlook.office.com/upload?AuthToken=***', Redacted);
 end;
 
+initialization
+  TDUnitX.RegisterTestFixture(TGraphUrlRedactorTests);
+
 end.

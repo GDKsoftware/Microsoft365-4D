@@ -50,6 +50,7 @@ type
       MethodDelete = 'DELETE';
       LogDebug = 'DEBUG';
       LogError = 'ERROR';
+      LogFormatGraphHttpError = 'Graph API HTTP %d - %s';
   public
     constructor Create(const AccessToken: string; const LogProc: TLogProc = nil); overload;
     constructor Create(const AccessToken: string; const Transport: IGraphHttpTransport;
@@ -145,7 +146,9 @@ begin
     Result[2] := TNetHeader.Create('X-AnchorMailbox', FMailboxAddress);
 
   for var Index := 0 to ExtraCount - 1 do
+  begin
     Result[BaseCount + Index] := FExtraHeaders[Index];
+  end;
 end;
 
 function TGraphHttpClient.BuildAuthorizationHeader: TArray<TNetHeader>;
@@ -206,7 +209,7 @@ begin
 
   if not IsSuccess then
   begin
-    Log(LogError, Format('Graph API HTTP %d - %s', [StatusCode, ResponseText]));
+    Log(LogError, Format(LogFormatGraphHttpError, [StatusCode, ResponseText]));
     Result := ParseErrorResponse(StatusCode, ResponseText);
     Exit;
   end;
@@ -347,7 +350,7 @@ begin
   Result := FTransport.Execute(Request);
 
   if not Result.IsSuccess then
-    Log(LogError, Format('Graph API HTTP %d - %s', [Result.StatusCode, Result.Content]));
+    Log(LogError, Format(LogFormatGraphHttpError, [Result.StatusCode, Result.Content]));
 end;
 
 function TGraphHttpClient.Patch(const Endpoint: string; const Body: string): TJSONObject;

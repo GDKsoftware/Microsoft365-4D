@@ -427,7 +427,7 @@ begin
   const LoweredQuery = Query.ToLower;
   const HasUnreadMarker = LoweredQuery.Contains(UnreadMarker);
   const HasIsReadFalseMarker = LoweredQuery.Contains(IsReadFalseMarker);
-  const FilterUnread = HasUnreadMarker or HasIsReadFalseMarker;
+  const FilterUnread = (HasUnreadMarker or HasIsReadFalseMarker);
 
   var SearchQuery := Query;
 
@@ -904,13 +904,11 @@ end;
 function TMailClient.AddAttachment(const MessageId, FileName, ContentType: string;
   const ContentBytes: TBytes): Boolean;
 begin
-  var Uploader := TAttachmentUploader.Create(FGraphClient);
-  try
-    Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
-    Result := True;
-  finally
-    Uploader.Free;
-  end;
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
+
+  Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
+
+  Result := True;
 end;
 
 function TMailClient.GetMessageMimeContent(const MessageId: string): TBytes;
