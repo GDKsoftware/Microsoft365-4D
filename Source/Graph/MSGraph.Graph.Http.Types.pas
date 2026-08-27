@@ -41,7 +41,10 @@ begin
   for var Header in Headers do
   begin
     if SameText(Header.Name, Name) then
-      Exit(Header.Value);
+    begin
+      Result := Header.Value;
+      Exit;
+    end;
   end;
 end;
 

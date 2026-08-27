@@ -291,7 +291,9 @@ begin
       HttpCreated:
         begin
           const Location = Response.HeaderValue(HeaderLocation);
-          Exit(AttachmentIdFromLocation(Location));
+
+          Result := AttachmentIdFromLocation(Location);
+          Exit;
         end;
     else
       FailChunkUpload(UploadUrl, FileName, Offset, RangeEnd, TotalSize, Response);
@@ -378,7 +380,10 @@ begin
 
   var AttachmentObj := TJSONObject.ParseJSONValue(Response.Content) as TJSONObject;
   if not Assigned(AttachmentObj) then
-    Exit('');
+  begin
+    Result := '';
+    Exit;
+  end;
 
   try
     Result := TGraphJson.GetString(AttachmentObj, 'id');
@@ -412,12 +417,18 @@ end;
 function TAttachmentUploader.AttachmentIdFromLocation(const Location: string): string;
 begin
   if Location.IsEmpty then
-    Exit('');
+  begin
+    Result := '';
+    Exit;
+  end;
 
   const Segments = Location.Split(['/']);
   const HasSegments = (Length(Segments) > 0);
   if not HasSegments then
-    Exit('');
+  begin
+    Result := '';
+    Exit;
+  end;
 
   var LastSegment := Segments[High(Segments)];
 
@@ -436,7 +447,10 @@ begin
 
   const HasODataKey = ((KeyStart >= 0) and (KeyEnd > KeyStart));
   if not HasODataKey then
-    Exit(Segment);
+  begin
+    Result := Segment;
+    Exit;
+  end;
 
   const Key = Segment.Substring(KeyStart + 1, KeyEnd - KeyStart - 1);
 
@@ -498,7 +512,10 @@ end;
 function TAttachmentUploader.IsBelowUploadSessionMinimum(const Response: TGraphHttpResponse): Boolean;
 begin
   if Response.IsSuccess then
-    Exit(False);
+  begin
+    Result := False;
+    Exit;
+  end;
 
   const ErrorCode = ErrorMember(Response.Content, 'code');
 
@@ -526,7 +543,10 @@ function TAttachmentUploader.ChunkFailureReason(const Response: TGraphHttpRespon
 begin
   const IsSessionExpired = (Response.StatusCode = HttpUnauthorized);
   if IsSessionExpired then
-    Exit(SessionExpiredReason);
+  begin
+    Result := SessionExpiredReason;
+    Exit;
+  end;
 
   Result := FailureReason(Response);
 end;

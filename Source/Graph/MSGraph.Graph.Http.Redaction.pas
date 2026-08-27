@@ -25,7 +25,10 @@ begin
   const QueryStart = Url.IndexOf('?');
   const HasQuery = (QueryStart >= 0);
   if not HasQuery then
-    Exit(Url);
+  begin
+    Result := Url;
+    Exit;
+  end;
 
   const BaseUrl = Url.Substring(0, QueryStart + 1);
   const Parameters = Url.Substring(QueryStart + 1).Split(['&']);
@@ -46,11 +49,17 @@ begin
   const Separator = Parameter.IndexOf('=');
   const HasValue = (Separator >= 0);
   if not HasValue then
-    Exit(Parameter);
+  begin
+    Result := Parameter;
+    Exit;
+  end;
 
   const Name = Parameter.Substring(0, Separator);
   if not IsSensitive(Name) then
-    Exit(Parameter);
+  begin
+    Result := Parameter;
+    Exit;
+  end;
 
   Result := Format('%s=%s', [Name, RedactedValue]);
 end;
@@ -62,7 +71,10 @@ begin
   for var SensitiveParameter in SensitiveQueryParameters do
   begin
     if SameText(Name, SensitiveParameter) then
-      Exit(True);
+    begin
+      Result := True;
+      Exit;
+    end;
   end;
 end;
 
