@@ -48,19 +48,14 @@ type
     [Test]
     procedure CreateDraft_EmptyHeaderArray_OmitsInternetMessageHeaders;
     [Test]
-    procedure CreateDraft_HeaderWithoutXPrefix_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderWithEmptyName_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderNameWithColon_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderNameWithTrailingSpace_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderValueWithLineBreak_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderValueWithDeleteCharacter_RaisesReadableException;
-    [Test]
-    procedure CreateDraft_HeaderValueWithUnicodeSeparator_RaisesReadableException;
+    [TestCase('MissingXPrefix', 'Example-Id;42;Custom mail header "Example-Id" is not allowed: a custom header name must start with "x-".', ';')]
+    [TestCase('EmptyName', '   ;42;A custom mail header name must not be empty.', ';')]
+    [TestCase('NameWithColon', 'x-example-id:42;value;Custom mail header "x-example-id:42" must contain printable characters only, and no ":".', ';')]
+    [TestCase('NameWithTrailingSpace', 'x-example-id ;42;Custom mail header "x-example-id " must contain printable characters only, and no ":".', ';')]
+    [TestCase('ValueWithLineBreak', 'x-example-id;42' + #13#10 + 'x-injected: yes;The value of custom mail header "x-example-id" must not contain line breaks or control characters.', ';')]
+    [TestCase('ValueWithDeleteCharacter', 'x-example-id;42' + #127 + ';The value of custom mail header "x-example-id" must not contain line breaks or control characters.', ';')]
+    [TestCase('ValueWithUnicodeSeparator', 'x-example-id;42' + #$2028 + 'more;The value of custom mail header "x-example-id" must not contain line breaks or control characters.', ';')]
+    procedure CreateDraft_InvalidHeader_RaisesReadableException(const Name, Value, ExpectedMessage: string);
     [Test]
     procedure CreateDraft_DuplicateHeaderName_RaisesReadableException;
     [Test]
@@ -321,46 +316,10 @@ begin
   end;
 end;
 
-procedure TMailClientTests.CreateDraft_HeaderWithoutXPrefix_RaisesReadableException;
+procedure TMailClientTests.CreateDraft_InvalidHeader_RaisesReadableException(const Name, Value,
+  ExpectedMessage: string);
 begin
-  AssertHeaderRejected([TMailHeader.Create('Example-Id', '42')],
-    'Custom mail header "Example-Id" is not allowed: a custom header name must start with "x-".');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderWithEmptyName_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('   ', '42')],
-    'A custom mail header name must not be empty.');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderNameWithColon_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('x-example-id:42', 'value')],
-    'Custom mail header "x-example-id:42" must contain printable characters only, and no ":".');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderNameWithTrailingSpace_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('x-example-id ', '42')],
-    'Custom mail header "x-example-id " must contain printable characters only, and no ":".');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderValueWithLineBreak_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('x-example-id', '42'#13#10'x-injected: yes')],
-    'The value of custom mail header "x-example-id" must not contain line breaks or control characters.');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderValueWithDeleteCharacter_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('x-example-id', '42'#127)],
-    'The value of custom mail header "x-example-id" must not contain line breaks or control characters.');
-end;
-
-procedure TMailClientTests.CreateDraft_HeaderValueWithUnicodeSeparator_RaisesReadableException;
-begin
-  AssertHeaderRejected([TMailHeader.Create('x-example-id', '42'#$2028'more')],
-    'The value of custom mail header "x-example-id" must not contain line breaks or control characters.');
+  AssertHeaderRejected([TMailHeader.Create(Name, Value)], ExpectedMessage);
 end;
 
 procedure TMailClientTests.CreateDraft_DuplicateHeaderName_RaisesReadableException;
