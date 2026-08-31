@@ -10,7 +10,7 @@ uses
 
 const
   LargeAttachmentThreshold = 3 * 1024 * 1024;
-  MaxAttachmentSize = 150 * 1024 * 1024;
+  MaxAttachmentSize = 25 * 1024 * 1024;
   DefaultUploadChunkSize = 3 * 1024 * 1024;
 
 type

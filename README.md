@@ -183,11 +183,11 @@ Mail.SendDraft(Draft.Id);
 | Size | Route |
 |------|-------|
 | Below 3 MB | The file is posted as part of the message itself |
-| 3 MB up to 150 MB | An upload session is created on the existing draft and the file is uploaded in chunks of 3 MiB |
+| 3 MB up to 25 MB | An upload session is created on the existing draft and the file is uploaded in chunks of 3 MiB |
 
 Microsoft does not document the exact byte count behind "3 MB", so both routes can refuse a file that sits right on the boundary. The library handles that itself: a message-body upload rejected with `HTTP 413` is retried once through an upload session, and an upload session rejected with `ErrorAttachmentSizeShouldNotBeLessThanMinimumSize` is retried once through the message body. It never switches more than once.
 
-An empty file and a file over 150 MB are rejected with `EInvalidAttachmentException` before any request is sent.
+An empty file and a file over 25 MB are rejected with `EInvalidAttachmentException` before any request is sent.
 
 When a chunk fails, the library cancels the upload session and raises `EGraphApiException` naming the file, its size, the byte range that failed and the HTTP status. The draft is never sent and is left untouched, so the caller can retry or call `DeleteDraft`. There is no automatic retry: every non-success status ends the upload.
 
@@ -197,7 +197,7 @@ Cancelling that session can itself fail. When the `DELETE` answers with a non-su
 
 The last `PUT` of a successful upload answers `HTTP 201 Created` with a `Location` header holding the attachment id. If that header is missing or holds no id, `EGraphApiException` is raised as well. The upload itself did succeed in that case, and the message says so: the attachment is on the draft, but its id could not be determined, so a caller that needs the id to remove or inspect the attachment later is told instead of being handed an empty string. The upload session is not cancelled, because there is nothing left to cancel.
 
-150 MB is the ceiling Graph accepts, not the ceiling that will actually be delivered. The effective limit is the message size limit of the mailbox, 35 MB by default in Exchange Online. An upload above that limit can succeed and still fail later, at `SendDraft`.
+Graph itself accepts attachments up to 150 MB, but the library caps at 25 MB. That stays under the message size limit of the mailbox, 35 MB by default in Exchange Online, so an upload accepted by the library is not expected to fail later at `SendDraft` for size reasons alone.
 
 `Mail.ReadWrite` is required to create the upload session; `Mail.Send` remains required to send the draft.
 
