@@ -82,8 +82,13 @@ function TFakeGraphHttpTransport.HeaderValue(const RequestIndex: Integer; const 
 begin
   Result := '';
   for var Header in RequestAt(RequestIndex).Headers do
+  begin
     if SameText(Header.Name, Name) then
-      Exit(Header.Value);
+    begin
+      Result := Header.Value;
+      Exit;
+    end;
+  end;
 end;
 
 function TFakeGraphHttpTransport.TakeNextResponse(const Request: TGraphHttpRequest): TGraphHttpResponse;

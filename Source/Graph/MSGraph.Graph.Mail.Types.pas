@@ -2,13 +2,29 @@ unit MSGraph.Graph.Mail.Types;
 
 interface
 
+uses
+  MSGraph.OAuth2.Types;
+
 type
+  EInvalidMailHeaderException = class(EMSGraphException);
+  EDeltaLinkExpiredException = class(EGraphApiException);
+
   TEmailAddress = record
+  public
     Name: string;
     Address: string;
   end;
 
+  TMailHeader = record
+  public
+    Name: string;
+    Value: string;
+
+    constructor Create(const HeaderName: string; const HeaderValue: string);
+  end;
+
   TMailMessage = record
+  public
     Id: string;
     ConversationId: string;
     Subject: string;
@@ -27,6 +43,7 @@ type
   end;
 
   TMailAttachment = record
+  public
     Id: string;
     Name: string;
     ContentType: string;
@@ -37,6 +54,7 @@ type
   end;
 
   TMailFolder = record
+  public
     Id: string;
     DisplayName: string;
     ParentFolderId: string;
@@ -46,29 +64,40 @@ type
   end;
 
   TSearchMessagesResult = record
+  public
     Messages: TArray<TMailMessage>;
     HasMore: Boolean;
   end;
 
   TDraftResult = record
+  public
     Id: string;
     Subject: string;
   end;
 
   TMoveMessageResult = record
+  public
     NewMessageId: string;
   end;
 
   TDeltaMessageChange = record
+  public
     Message: TMailMessage;
     IsRemoved: Boolean;
   end;
 
   TDeltaSyncResult = record
+  public
     Changes: TArray<TDeltaMessageChange>;
     DeltaLink: string;
   end;
 
 implementation
+
+constructor TMailHeader.Create(const HeaderName: string; const HeaderValue: string);
+begin
+  Name := HeaderName;
+  Value := HeaderValue;
+end;
 
 end.

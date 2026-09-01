@@ -141,6 +141,33 @@ var Messages := Mail.SearchMessages('*', '', 10, 0);
 
 This requires the `Mail.Read.Shared` and/or `Mail.Send.Shared` delegated permissions in your Azure AD app registration.
 
+### 7. Add Custom Internet Message Headers
+
+`CreateDraft` has an overload that takes custom headers. They are written to the message as `internetMessageHeaders` and travel with it when the draft is sent:
+
+```pascal
+var Draft := Mail.CreateDraft('Subject', 'Body', ['recipient@company.com'], [], [], False,
+  [TMailHeader.Create('x-example-id', '42')]);
+Mail.SendDraft(Draft.Id);
+```
+
+Microsoft Graph requires a custom header name to start with `x-`, and accepts at most five custom headers per message. The library validates the headers before sending anything and raises `EInvalidMailHeaderException` with a readable message when a rule is broken:
+
+| Rule | Rejected example |
+|------|------------------|
+| At most five custom headers per message | six headers |
+| The name must not be empty | `''` |
+| The name must start with `x-` (case insensitive) | `Example-Id` |
+| The name may contain printable ASCII only, and no `:` | `x-example-id:42`, `x-example-id ` |
+| The value must not contain control characters or line separators | `42<CR><LF>x-injected: yes` |
+| The same name must not be supplied twice (case insensitive) | `x-example-id` and `X-Example-Id` |
+
+Names are sent exactly as supplied — the library does not change their casing.
+
+Graph accepts `internetMessageHeaders` only when a message is created, so `UpdateDraft` does not offer this parameter.
+
+Two things to know about the receiving side. Exchange Online maps a custom header name to a named property on first use, and does not store the value on that very first message — only later messages carrying the same header name keep their value. A transport rule or the header firewall can also strip custom headers in transit.
+
 ## Project Structure
 
 ```
@@ -183,6 +210,8 @@ All library exceptions inherit from `EMSGraphException`:
 | `EOAuth2Exception` | Token exchange failures, invalid responses |
 | `EGraphApiException` | Graph API HTTP errors, missing access token |
 | `ETokenStoreException` | Missing tokens, expired PKCE sessions |
+| `EInvalidMailHeaderException` | Invalid custom mail header supplied by the caller |
+| `EDeltaLinkExpiredException` | An expired delta link, so a full resynchronisation is needed |
 
 ### TMailClient
 
@@ -192,8 +221,9 @@ All library exceptions inherit from `EMSGraphException`:
 | `GetMessage(MessageId)` | Get full message by ID |
 | `GetMessageAttachments(MessageId)` | List attachments |
 | `GetAttachmentContent(MessageId, AttachmentId)` | Get attachment content |
-| `CreateDraft(Subject, Body, To, Cc, IsHtml)` | Create draft |
-| `UpdateDraft(MessageId, Subject, Body, To, Cc, IsHtml)` | Update existing draft |
+| `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml)` | Create draft |
+| `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml, Headers)` | Create draft with custom internet message headers |
+| `UpdateDraft(MessageId, Subject, Body, To, Cc, Bcc, IsHtml)` | Update existing draft |
 | `SendDraft(MessageId)` | Send a draft message |
 | `DeleteDraft(MessageId)` | Delete a draft |
 | `MoveMessage(MessageId, FolderId)` | Move message to folder |

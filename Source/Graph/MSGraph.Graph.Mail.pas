@@ -11,18 +11,25 @@ uses
   MSGraph.Graph.Mail.Interfaces;
 
 type
-  EDeltaLinkExpiredException = class(EGraphApiException);
-
   TMailClient = class(TInterfacedObject, IMailClient)
   strict private
     FGraphClient: TGraphHttpClient;
     FOwnsClient: Boolean;
 
     function BuildRecipientArray(const Recipients: TArray<string>): TJSONArray;
+    function BuildInternetMessageHeaders(const Headers: TArray<TMailHeader>): TJSONArray;
+    class function ContainsControlCharacter(const Value: string): Boolean; static;
+    class function ContainsInvalidNameCharacter(const Value: string): Boolean; static;
+    class function IsDuplicateHeaderName(const Headers: TArray<TMailHeader>;
+      const HeaderIndex: Integer): Boolean; static;
+    class procedure ValidateCustomHeaders(const Headers: TArray<TMailHeader>); static;
     function BuildMessageBody(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean;
+      const Headers: TArray<TMailHeader>): TJSONObject;
     function MessageEndpoint(const MessageId: string): string;
+
+    function FetchWellKnownFolders: TArray<TMailFolder>;
 
     function EndpointMessages: string;
     function EndpointMailFolders: string;
@@ -35,12 +42,25 @@ type
     class function ParseAttachment(const AttachObj: TJSONObject): TMailAttachment; static;
     class function BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
       const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string; static;
+    class function FormatRecipients(const Recipients: TArray<TEmailAddress>): string; static;
+    class function BuildQuotedOriginal(const Original: TMailMessage): string; static;
+    class function BuildCreateReplyBody(const CombinedBody: string;
+      const ContentType: string): TJSONObject; static;
     function ExecuteDeltaPages(const FolderId, SelectFields, DeltaLink: string;
       const ItemProcessor: TProc<TJSONObject>): string;
 
     const
       ContentTypeHtml = 'HTML';
       ContentTypeText = 'Text';
+      CustomHeaderPrefix = 'x-';
+      MaxCustomHeaders = 5;
+      HeaderNameSeparator = ':';
+      PrintableAsciiFirst = '!';
+      PrintableAsciiLast = '~';
+      UnicodeLineSeparator = #$2028;
+      UnicodeParagraphSeparator = #$2029;
+      UnreadMarker = 'is:unread';
+      IsReadFalseMarker = 'isread:false';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
   public
@@ -55,7 +75,11 @@ type
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult; overload;
+    function CreateDraft(const Subject: string; const Body: string;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+      const BccRecipients: TArray<string>; const IsHtml: Boolean;
+      const Headers: TArray<TMailHeader>): TDraftResult; overload;
     function UpdateDraft(const MessageId: string; const Subject: string; const Body: string;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
       const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
@@ -84,6 +108,7 @@ type
 implementation
 
 uses
+  System.Character,
   System.NetEncoding,
   MSGraph.Graph.JsonHelper;
 
@@ -121,9 +146,125 @@ begin
   end;
 end;
 
+function TMailClient.BuildInternetMessageHeaders(const Headers: TArray<TMailHeader>): TJSONArray;
+begin
+  Result := TJSONArray.Create;
+  for var Header in Headers do
+  begin
+    var HeaderObj := TJSONObject.Create;
+    HeaderObj.AddPair('name', Header.Name);
+    HeaderObj.AddPair('value', Header.Value);
+    Result.Add(HeaderObj);
+  end;
+end;
+
+class function TMailClient.ContainsControlCharacter(const Value: string): Boolean;
+begin
+  Result := False;
+  for var Character in Value do
+  begin
+    const IsControlCharacter = Character.IsControl;
+    const IsUnicodeSeparator = (Character = UnicodeLineSeparator) or (Character = UnicodeParagraphSeparator);
+    if IsControlCharacter or IsUnicodeSeparator then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+class function TMailClient.ContainsInvalidNameCharacter(const Value: string): Boolean;
+begin
+  Result := False;
+  for var Character in Value do
+  begin
+    const IsPrintableAscii = (Character >= PrintableAsciiFirst) and (Character <= PrintableAsciiLast);
+    const IsAllowed = IsPrintableAscii and (Character <> HeaderNameSeparator);
+    if not IsAllowed then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+class function TMailClient.IsDuplicateHeaderName(const Headers: TArray<TMailHeader>;
+  const HeaderIndex: Integer): Boolean;
+begin
+  Result := False;
+  for var Index := Low(Headers) to High(Headers) do
+  begin
+    const IsOwnIndex = (Index = HeaderIndex);
+    if IsOwnIndex then
+      Continue;
+
+    const HasSameName = SameText(Headers[Index].Name, Headers[HeaderIndex].Name);
+    if HasSameName then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+class procedure TMailClient.ValidateCustomHeaders(const Headers: TArray<TMailHeader>);
+begin
+  const HasTooManyHeaders = (Length(Headers) > MaxCustomHeaders);
+  if HasTooManyHeaders then
+  begin
+    raise EInvalidMailHeaderException.CreateFmt(
+      'A message accepts at most %d custom mail headers, but %d were supplied.',
+      [MaxCustomHeaders, Length(Headers)]);
+  end;
+
+  for var Index := Low(Headers) to High(Headers) do
+  begin
+    const Header = Headers[Index];
+    const TrimmedName = Header.Name.Trim;
+
+    const HasEmptyName = TrimmedName.IsEmpty;
+    if HasEmptyName then
+    begin
+      raise EInvalidMailHeaderException.Create('A custom mail header name must not be empty.');
+    end;
+
+    const HasCustomPrefix = Header.Name.StartsWith(CustomHeaderPrefix, True);
+    if not HasCustomPrefix then
+    begin
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" is not allowed: a custom header name must start with "%s".',
+        [Header.Name, CustomHeaderPrefix]);
+    end;
+
+    const HasInvalidNameCharacter = ContainsInvalidNameCharacter(Header.Name);
+    if HasInvalidNameCharacter then
+    begin
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" must contain printable characters only, and no "%s".',
+        [Header.Name, HeaderNameSeparator]);
+    end;
+
+    const HasControlCharacterInValue = ContainsControlCharacter(Header.Value);
+    if HasControlCharacterInValue then
+    begin
+      raise EInvalidMailHeaderException.CreateFmt(
+        'The value of custom mail header "%s" must not contain line breaks or control characters.',
+        [Header.Name]);
+    end;
+
+    const HasDuplicateName = IsDuplicateHeaderName(Headers, Index);
+    if HasDuplicateName then
+    begin
+      raise EInvalidMailHeaderException.CreateFmt(
+        'Custom mail header "%s" is specified more than once.', [Header.Name]);
+    end;
+  end;
+end;
+
 function TMailClient.BuildMessageBody(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
-  const BccRecipients: TArray<string>; const IsHtml: Boolean): TJSONObject;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean;
+  const Headers: TArray<TMailHeader>): TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('subject', Subject);
@@ -145,6 +286,10 @@ begin
   const HasBccRecipients = (Length(BccRecipients) > 0);
   if HasBccRecipients then
     Result.AddPair('bccRecipients', BuildRecipientArray(BccRecipients));
+
+  const HasHeaders = (Length(Headers) > 0);
+  if HasHeaders then
+    Result.AddPair('internetMessageHeaders', BuildInternetMessageHeaders(Headers));
 end;
 
 function TMailClient.EndpointMessages: string;
@@ -278,13 +423,17 @@ function TMailClient.SearchMessages(const Query: string; const FolderId: string;
 begin
   Result := Default(TSearchMessagesResult);
 
-  const FilterUnread = (Query.ToLower.Contains('is:unread') or Query.ToLower.Contains('isread:false'));
+  const LoweredQuery = Query.ToLower;
+  const HasUnreadMarker = LoweredQuery.Contains(UnreadMarker);
+  const HasIsReadFalseMarker = LoweredQuery.Contains(IsReadFalseMarker);
+  const FilterUnread = HasUnreadMarker or HasIsReadFalseMarker;
+
   var SearchQuery := Query;
 
   if FilterUnread then
   begin
-    SearchQuery := SearchQuery.Replace('is:unread', '', [rfReplaceAll, rfIgnoreCase]);
-    SearchQuery := SearchQuery.Replace('isread:false', '', [rfReplaceAll, rfIgnoreCase]);
+    SearchQuery := SearchQuery.Replace(UnreadMarker, '', [rfReplaceAll, rfIgnoreCase]);
+    SearchQuery := SearchQuery.Replace(IsReadFalseMarker, '', [rfReplaceAll, rfIgnoreCase]);
     SearchQuery := SearchQuery.Trim;
   end;
 
@@ -398,6 +547,16 @@ function TMailClient.CreateDraft(const Subject: string; const Body: string;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
   const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
+  Result := CreateDraft(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml, nil);
+end;
+
+function TMailClient.CreateDraft(const Subject: string; const Body: string;
+  const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+  const BccRecipients: TArray<string>; const IsHtml: Boolean;
+  const Headers: TArray<TMailHeader>): TDraftResult;
+begin
+  ValidateCustomHeaders(Headers);
+
   Result := Default(TDraftResult);
   var Signature := GetMailboxSignature;
   var FinalBody := Body;
@@ -411,7 +570,7 @@ begin
       FinalBody := FinalBody + #13#10#13#10 + Signature;
   end;
 
-  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, BccRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, FinalBody, ToRecipients, CcRecipients, BccRecipients, IsHtml, Headers);
   try
     var DraftEndpoint: string;
     if FGraphClient.IsSharedMailbox then
@@ -438,7 +597,7 @@ function TMailClient.UpdateDraft(const MessageId: string; const Subject: string;
   const BccRecipients: TArray<string>; const IsHtml: Boolean): TDraftResult;
 begin
   Result := Default(TDraftResult);
-  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml);
+  var MessageObj := BuildMessageBody(Subject, Body, ToRecipients, CcRecipients, BccRecipients, IsHtml, nil);
   try
     var Response := FGraphClient.Patch(MessageEndpoint(MessageId), MessageObj.ToJSON);
     try
@@ -474,52 +633,52 @@ begin
   end;
 end;
 
+class function TMailClient.FormatRecipients(const Recipients: TArray<TEmailAddress>): string;
+begin
+  Result := '';
+  for var Index := 0 to High(Recipients) do
+  begin
+    if Index > 0 then
+      Result := Result + '; ';
+    if not Recipients[Index].Name.IsEmpty then
+      Result := Result + Recipients[Index].Name + ' &lt;' + Recipients[Index].Address + '&gt;'
+    else
+      Result := Result + Recipients[Index].Address;
+  end;
+end;
+
+class function TMailClient.BuildQuotedOriginal(const Original: TMailMessage): string;
+begin
+  Result :=
+    '<hr style="display:inline-block;width:98%">' +
+    '<div id="divRplyFwdMsg" dir="ltr">' +
+    '<font face="Calibri, sans-serif" color="#000000" style="font-size:11pt">' +
+    '<b>From:</b> ' + FormatRecipients([Original.From]) + '<br>' +
+    '<b>Sent:</b> ' + Original.ReceivedDateTime + '<br>' +
+    '<b>To:</b> ' + FormatRecipients(Original.ToRecipients) + '<br>';
+  const HasCc = (Length(Original.CcRecipients) > 0);
+  if HasCc then
+    Result := Result + '<b>Cc:</b> ' + FormatRecipients(Original.CcRecipients) + '<br>';
+  Result := Result +
+    '<b>Subject:</b> ' + Original.Subject +
+    '</font><br><br>' + Original.Body + '</div>';
+end;
+
+class function TMailClient.BuildCreateReplyBody(const CombinedBody: string;
+  const ContentType: string): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  var MessageObj := TJSONObject.Create;
+  var BodyObj := TJSONObject.Create;
+  BodyObj.AddPair('contentType', ContentType);
+  BodyObj.AddPair('content', CombinedBody);
+  MessageObj.AddPair('body', BodyObj);
+  Result.AddPair('message', MessageObj);
+end;
+
 function TMailClient.CreateReplyDraft(const MessageId: string; const Body: string;
   const CcRecipients: TArray<string>; const IsHtml: Boolean;
   const ReplyAll: Boolean = True): TDraftResult;
-
-  function FormatRecipients(const Recipients: TArray<TEmailAddress>): string;
-  begin
-    Result := '';
-    for var Index := 0 to High(Recipients) do
-    begin
-      if Index > 0 then
-        Result := Result + '; ';
-      if not Recipients[Index].Name.IsEmpty then
-        Result := Result + Recipients[Index].Name + ' &lt;' + Recipients[Index].Address + '&gt;'
-      else
-        Result := Result + Recipients[Index].Address;
-    end;
-  end;
-
-  function BuildQuotedOriginal(const Original: TMailMessage): string;
-  begin
-    Result :=
-      '<hr style="display:inline-block;width:98%">' +
-      '<div id="divRplyFwdMsg" dir="ltr">' +
-      '<font face="Calibri, sans-serif" color="#000000" style="font-size:11pt">' +
-      '<b>From:</b> ' + FormatRecipients([Original.From]) + '<br>' +
-      '<b>Sent:</b> ' + Original.ReceivedDateTime + '<br>' +
-      '<b>To:</b> ' + FormatRecipients(Original.ToRecipients) + '<br>';
-    const HasCc = (Length(Original.CcRecipients) > 0);
-    if HasCc then
-      Result := Result + '<b>Cc:</b> ' + FormatRecipients(Original.CcRecipients) + '<br>';
-    Result := Result +
-      '<b>Subject:</b> ' + Original.Subject +
-      '</font><br><br>' + Original.Body + '</div>';
-  end;
-
-  function BuildCreateReplyBody(const CombinedBody: string; const ContentType: string): TJSONObject;
-  begin
-    Result := TJSONObject.Create;
-    var MessageObj := TJSONObject.Create;
-    var BodyObj := TJSONObject.Create;
-    BodyObj.AddPair('contentType', ContentType);
-    BodyObj.AddPair('content', CombinedBody);
-    MessageObj.AddPair('body', BodyObj);
-    Result.AddPair('message', MessageObj);
-  end;
-
 begin
   Result := Default(TDraftResult);
 
@@ -626,33 +785,32 @@ begin
   end;
 end;
 
-function TMailClient.ListMailFolders(const ParentFolderId: string): TArray<TMailFolder>;
-
-  function FetchWellKnownFolders: TArray<TMailFolder>;
-  const
-    WellKnownFolderNames: array[0..5] of string = (
-      'Inbox', 'SentItems', 'Drafts', 'DeletedItems', 'Archive', 'JunkEmail'
-    );
-    SelectFields = '$select=id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount';
+function TMailClient.FetchWellKnownFolders: TArray<TMailFolder>;
+const
+  WellKnownFolderNames: array[0..5] of string = (
+    'Inbox', 'SentItems', 'Drafts', 'DeletedItems', 'Archive', 'JunkEmail'
+  );
+  SelectFields = '$select=id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount';
+begin
+  Result := nil;
+  var Folders: TArray<TMailFolder>;
+  SetLength(Folders, 0);
+  for var FolderName in WellKnownFolderNames do
   begin
-    Result := nil;
-    var Folders: TArray<TMailFolder>;
-    SetLength(Folders, 0);
-    for var FolderName in WellKnownFolderNames do
-    begin
-      var Response := FGraphClient.Get(EndpointMailFolders + '/' + FolderName, SelectFields);
-      try
-        if TGraphJson.HasError(Response) then
-          Continue;
-        SetLength(Folders, Length(Folders) + 1);
-        Folders[High(Folders)] := ParseFolder(Response);
-      finally
-        Response.Free;
-      end;
+    var Response := FGraphClient.Get(EndpointMailFolders + '/' + FolderName, SelectFields);
+    try
+      if TGraphJson.HasError(Response) then
+        Continue;
+      SetLength(Folders, Length(Folders) + 1);
+      Folders[High(Folders)] := ParseFolder(Response);
+    finally
+      Response.Free;
     end;
-    Result := Folders;
   end;
+  Result := Folders;
+end;
 
+function TMailClient.ListMailFolders(const ParentFolderId: string): TArray<TMailFolder>;
 begin
   Result := nil;
 
