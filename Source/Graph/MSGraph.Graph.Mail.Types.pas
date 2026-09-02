@@ -6,7 +6,8 @@ uses
   MSGraph.OAuth2.Types;
 
 type
-  EInvalidMailHeaderException = class(EMSGraphException);
+  EInvalidMailHeaderException = class(EGraphApiException);
+  EInvalidAttachmentException = class(EGraphApiException);
   EDeltaLinkExpiredException = class(EGraphApiException);
 
   TEmailAddress = record

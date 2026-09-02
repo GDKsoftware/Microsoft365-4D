@@ -131,10 +131,12 @@
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Interfaces.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Types.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Transport.pas"/>
+        <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.Redaction.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Http.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.JsonHelper.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Mail.Interfaces.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Mail.Types.pas"/>
+        <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Mail.Attachments.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.Mail.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.People.Interfaces.pas"/>
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.People.Types.pas"/>

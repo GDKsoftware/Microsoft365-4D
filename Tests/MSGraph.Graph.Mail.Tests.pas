@@ -86,6 +86,7 @@ const
   DraftRequestIndex = 1;
   DraftRequestCount = 2;
   RejectedBeforeRequest = 'an invalid header must be rejected before any request';
+  InternetMessageHeadersKey = 'internetMessageHeaders';
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -108,7 +109,9 @@ class function TMailClientTests.NumberedHeaders(const Count: Integer): TArray<TM
 begin
   SetLength(Result, Count);
   for var Index := 0 to High(Result) do
+  begin
     Result[Index] := TMailHeader.Create('x-example-' + Index.ToString, Index.ToString);
+  end;
 end;
 
 procedure TMailClientTests.CreateDraftWithHeaders(const Headers: TArray<TMailHeader>);
@@ -198,7 +201,7 @@ begin
 
     Assert.IsNull(TGraphJson.GetArray(Body, 'ccRecipients'), 'an empty cc must not appear in the body');
     Assert.IsNull(TGraphJson.GetArray(Body, 'bccRecipients'), 'an empty bcc must not appear in the body');
-    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+    Assert.IsNull(TGraphJson.GetArray(Body, InternetMessageHeadersKey),
       'a call without custom headers must not add internetMessageHeaders');
   finally
     Body.Free;
@@ -265,7 +268,7 @@ begin
 
   const Body = PostedDraftJson;
   try
-    const Headers = TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    const Headers = TGraphJson.GetArray(Body, InternetMessageHeadersKey);
     Assert.IsNotNull(Headers, 'internetMessageHeaders is missing');
     Assert.AreEqual(2, Headers.Count);
 
@@ -289,7 +292,7 @@ begin
 
   const Body = PostedDraftJson;
   try
-    const Headers = TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    const Headers = TGraphJson.GetArray(Body, InternetMessageHeadersKey);
     Assert.IsNotNull(Headers, 'the prefix check must be case insensitive');
     Assert.AreEqual(1, Headers.Count);
 
@@ -309,7 +312,7 @@ begin
 
   const Body = PostedDraftJson;
   try
-    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+    Assert.IsNull(TGraphJson.GetArray(Body, InternetMessageHeadersKey),
       'an empty header array must not appear in the body');
   finally
     Body.Free;
@@ -349,7 +352,7 @@ begin
 
   const Body = PostedDraftJson;
   try
-    const Headers = TGraphJson.GetArray(Body, 'internetMessageHeaders');
+    const Headers = TGraphJson.GetArray(Body, InternetMessageHeadersKey);
     Assert.IsNotNull(Headers, 'five headers is the documented maximum and must be accepted');
     Assert.AreEqual(5, Headers.Count);
   finally
@@ -367,7 +370,7 @@ begin
 
   const Body = RequestJsonAt(0);
   try
-    Assert.IsNull(TGraphJson.GetArray(Body, 'internetMessageHeaders'),
+    Assert.IsNull(TGraphJson.GetArray(Body, InternetMessageHeadersKey),
       'Graph accepts internetMessageHeaders only when creating a message, not on a patch');
   finally
     Body.Free;

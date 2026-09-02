@@ -7,6 +7,12 @@ uses
   MSGraph.Graph.Mail.Types;
 
 type
+  IAttachmentUploader = interface
+    ['{6E1C0A73-58B4-4F2D-9A6E-4C7D18B5E930}']
+    function Upload(const MessageEndpoint: string; const FileName: string;
+      const ContentType: string; const ContentBytes: TBytes): string;
+  end;
+
   IMailClient = interface
     ['{B2C3D4E5-F6A7-4B5C-9D0E-1F2A3B4C5D6E}']
     function SearchMessages(const Query: string; const FolderId: string;

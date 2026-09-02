@@ -28,24 +28,29 @@ type
     function BuildUrl(const Endpoint: string; const QueryParams: string = ''): string;
     function BuildHeaders: TArray<TNetHeader>;
     function BuildAuthorizationHeader: TArray<TNetHeader>;
+    function BuildUploadHeaders(const ContentRange: string): TArray<TNetHeader>;
     function ExecuteRequest(const Method: string; const Url: string; const Body: string = ''): TJSONObject;
     function ParseResponse(const StatusCode: Integer; const ResponseText: string): TJSONObject;
     function ParseErrorResponse(const StatusCode: Integer; const ResponseText: string): TJSONObject;
     procedure ValidateAccessToken;
-    procedure Log(const Level: string; const Message: string);
+    procedure LogRequest(const Method: string; const Url: string);
 
     const
       GraphBaseUrl = 'https://graph.microsoft.com/v1.0';
       HeaderAuthorization = 'Authorization';
       HeaderContentType = 'Content-Type';
+      HeaderContentRange = 'Content-Range';
       BearerPrefix = 'Bearer ';
       ContentTypeJson = 'application/json';
+      ContentTypeOctetStream = 'application/octet-stream';
       MethodGet = 'GET';
       MethodPost = 'POST';
       MethodPatch = 'PATCH';
+      MethodPut = 'PUT';
       MethodDelete = 'DELETE';
       LogDebug = 'DEBUG';
       LogError = 'ERROR';
+      LogFormatGraphHttpError = 'Graph API HTTP %d - %s';
   public
     constructor Create(const AccessToken: string; const LogProc: TLogProc = nil); overload;
     constructor Create(const AccessToken: string; const Transport: IGraphHttpTransport;
@@ -54,6 +59,7 @@ type
     function Get(const Endpoint: string; const QueryParams: string = ''): TJSONObject;
     function GetRawBytes(const Endpoint: string): TBytes;
     function Post(const Endpoint: string; const Body: string = ''): TJSONObject;
+    function PostRaw(const Endpoint: string; const Body: string): TGraphHttpResponse;
     function Patch(const Endpoint: string; const Body: string): TJSONObject;
     function Delete(const Endpoint: string): TJSONObject;
 
@@ -63,6 +69,10 @@ type
     function GetAbsoluteUrlWithHeaders(const FullUrl: string;
       const ExtraHeaders: TArray<string>): TJSONObject;
 
+    function PutAbsoluteUrlBytes(const FullUrl: string; const Bytes: TBytes;
+      const ContentRange: string): TGraphHttpResponse;
+    function DeleteAbsoluteUrl(const FullUrl: string): TGraphHttpResponse;
+
     function GetUserPrefix: string;
     function IsSharedMailbox: Boolean;
 
@@ -70,6 +80,8 @@ type
     function GetAccessToken: string;
 
     function GetUserProfile: TUserProfile;
+
+    procedure Log(const Level: string; const Message: string);
 
     property MailboxAddress: string read FMailboxAddress write FMailboxAddress;
   end;
@@ -79,6 +91,7 @@ implementation
 uses
   System.NetEncoding,
   MSGraph.Graph.JsonHelper,
+  MSGraph.Graph.Http.Redaction,
   MSGraph.Graph.Http.Transport;
 
 constructor TGraphHttpClient.Create(const AccessToken: string; const LogProc: TLogProc);
@@ -108,6 +121,11 @@ begin
     FLogProc(Level, Message);
 end;
 
+procedure TGraphHttpClient.LogRequest(const Method: string; const Url: string);
+begin
+  Log(LogDebug, Format('%s %s', [Method, TGraphUrlRedactor.Redact(Url)]));
+end;
+
 function TGraphHttpClient.BuildUrl(const Endpoint: string; const QueryParams: string): string;
 begin
   Result := GraphBaseUrl + Endpoint;
@@ -128,13 +146,22 @@ begin
     Result[2] := TNetHeader.Create('X-AnchorMailbox', FMailboxAddress);
 
   for var Index := 0 to ExtraCount - 1 do
+  begin
     Result[BaseCount + Index] := FExtraHeaders[Index];
+  end;
 end;
 
 function TGraphHttpClient.BuildAuthorizationHeader: TArray<TNetHeader>;
 begin
   SetLength(Result, 1);
   Result[0] := TNetHeader.Create(HeaderAuthorization, BearerPrefix + FAccessToken);
+end;
+
+function TGraphHttpClient.BuildUploadHeaders(const ContentRange: string): TArray<TNetHeader>;
+begin
+  SetLength(Result, 2);
+  Result[0] := TNetHeader.Create(HeaderContentType, ContentTypeOctetStream);
+  Result[1] := TNetHeader.Create(HeaderContentRange, ContentRange);
 end;
 
 procedure TGraphHttpClient.ValidateAccessToken;
@@ -182,7 +209,7 @@ begin
 
   if not IsSuccess then
   begin
-    Log(LogError, Format('Graph API HTTP %d - %s', [StatusCode, ResponseText]));
+    Log(LogError, Format(LogFormatGraphHttpError, [StatusCode, ResponseText]));
     Result := ParseErrorResponse(StatusCode, ResponseText);
     Exit;
   end;
@@ -226,7 +253,7 @@ end;
 function TGraphHttpClient.Get(const Endpoint: string; const QueryParams: string): TJSONObject;
 begin
   var Url := BuildUrl(Endpoint, QueryParams);
-  Log(LogDebug, MethodGet + ' ' + Url);
+  LogRequest(MethodGet, Url);
   Result := ExecuteRequest(MethodGet, Url);
 end;
 
@@ -235,7 +262,7 @@ begin
   ValidateAccessToken;
 
   var Url := BuildUrl(Endpoint);
-  Log(LogDebug, MethodGet + ' ' + Url + ' (raw)');
+  Log(LogDebug, Format('%s %s (raw)', [MethodGet, TGraphUrlRedactor.Redact(Url)]));
 
   var Request := Default(TGraphHttpRequest);
   Request.Method := MethodGet;
@@ -265,7 +292,7 @@ begin
   FExtraHeaders := ParsedHeaders;
   try
     var Url := BuildUrl(Endpoint, QueryParams);
-    Log(LogDebug, MethodGet + ' ' + Url);
+    LogRequest(MethodGet, Url);
     Result := ExecuteRequest(MethodGet, Url);
   finally
     FExtraHeaders := nil;
@@ -274,7 +301,7 @@ end;
 
 function TGraphHttpClient.GetAbsoluteUrl(const FullUrl: string): TJSONObject;
 begin
-  Log(LogDebug, MethodGet + ' ' + FullUrl);
+  LogRequest(MethodGet, FullUrl);
   Result := ExecuteRequest(MethodGet, FullUrl);
 end;
 
@@ -293,7 +320,7 @@ begin
 
   FExtraHeaders := ParsedHeaders;
   try
-    Log(LogDebug, MethodGet + ' ' + FullUrl);
+    LogRequest(MethodGet, FullUrl);
     Result := ExecuteRequest(MethodGet, FullUrl);
   finally
     FExtraHeaders := nil;
@@ -303,22 +330,69 @@ end;
 function TGraphHttpClient.Post(const Endpoint: string; const Body: string): TJSONObject;
 begin
   var Url := BuildUrl(Endpoint);
-  Log(LogDebug, MethodPost + ' ' + Url);
+  LogRequest(MethodPost, Url);
   Result := ExecuteRequest(MethodPost, Url, Body);
+end;
+
+function TGraphHttpClient.PostRaw(const Endpoint: string; const Body: string): TGraphHttpResponse;
+begin
+  ValidateAccessToken;
+
+  var Url := BuildUrl(Endpoint);
+  LogRequest(MethodPost, Url);
+
+  var Request := Default(TGraphHttpRequest);
+  Request.Method  := MethodPost;
+  Request.Url     := Url;
+  Request.Body    := Body;
+  Request.Headers := BuildHeaders;
+
+  Result := FTransport.Execute(Request);
+
+  if not Result.IsSuccess then
+    Log(LogError, Format(LogFormatGraphHttpError, [Result.StatusCode, Result.Content]));
 end;
 
 function TGraphHttpClient.Patch(const Endpoint: string; const Body: string): TJSONObject;
 begin
   var Url := BuildUrl(Endpoint);
-  Log(LogDebug, MethodPatch + ' ' + Url);
+  LogRequest(MethodPatch, Url);
   Result := ExecuteRequest(MethodPatch, Url, Body);
 end;
 
 function TGraphHttpClient.Delete(const Endpoint: string): TJSONObject;
 begin
   var Url := BuildUrl(Endpoint);
-  Log(LogDebug, MethodDelete + ' ' + Url);
+  LogRequest(MethodDelete, Url);
   Result := ExecuteRequest(MethodDelete, Url);
+end;
+
+function TGraphHttpClient.PutAbsoluteUrlBytes(const FullUrl: string; const Bytes: TBytes;
+  const ContentRange: string): TGraphHttpResponse;
+begin
+  Log(LogDebug, Format('%s %s [%s]', [MethodPut, TGraphUrlRedactor.Redact(FullUrl), ContentRange]));
+
+  var Request := Default(TGraphHttpRequest);
+  Request.Method    := MethodPut;
+  Request.Url       := FullUrl;
+  Request.BodyBytes := Bytes;
+  Request.Headers   := BuildUploadHeaders(ContentRange);
+
+  Result := FTransport.Execute(Request);
+
+  if not Result.IsSuccess then
+    Log(LogError, Format('Upload HTTP %d - %s', [Result.StatusCode, Result.Content]));
+end;
+
+function TGraphHttpClient.DeleteAbsoluteUrl(const FullUrl: string): TGraphHttpResponse;
+begin
+  LogRequest(MethodDelete, FullUrl);
+
+  var Request := Default(TGraphHttpRequest);
+  Request.Method := MethodDelete;
+  Request.Url    := FullUrl;
+
+  Result := FTransport.Execute(Request);
 end;
 
 function TGraphHttpClient.GetUserPrefix: string;

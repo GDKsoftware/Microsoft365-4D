@@ -110,7 +110,8 @@ implementation
 uses
   System.Character,
   System.NetEncoding,
-  MSGraph.Graph.JsonHelper;
+  MSGraph.Graph.JsonHelper,
+  MSGraph.Graph.Mail.Attachments;
 
 constructor TMailClient.Create(const AccessToken: string; const LogProc: TLogProc);
 begin
@@ -426,7 +427,7 @@ begin
   const LoweredQuery = Query.ToLower;
   const HasUnreadMarker = LoweredQuery.Contains(UnreadMarker);
   const HasIsReadFalseMarker = LoweredQuery.Contains(IsReadFalseMarker);
-  const FilterUnread = HasUnreadMarker or HasIsReadFalseMarker;
+  const FilterUnread = (HasUnreadMarker or HasIsReadFalseMarker);
 
   var SearchQuery := Query;
 
@@ -903,24 +904,11 @@ end;
 function TMailClient.AddAttachment(const MessageId, FileName, ContentType: string;
   const ContentBytes: TBytes): Boolean;
 begin
-  var AttachmentObj := TJSONObject.Create;
-  try
-    AttachmentObj.AddPair('@odata.type', '#microsoft.graph.fileAttachment');
-    AttachmentObj.AddPair('name', FileName);
-    AttachmentObj.AddPair('contentType', ContentType);
-    AttachmentObj.AddPair('contentBytes', TNetEncoding.Base64.EncodeBytesToString(ContentBytes));
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
 
-    var Response := FGraphClient.Post(MessageEndpoint(MessageId) + '/attachments', AttachmentObj.ToJSON);
-    try
-      Result := not TGraphJson.HasError(Response);
-      if not Result then
-        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-    finally
-      Response.Free;
-    end;
-  finally
-    AttachmentObj.Free;
-  end;
+  Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
+
+  Result := True;
 end;
 
 function TMailClient.GetMessageMimeContent(const MessageId: string): TBytes;
