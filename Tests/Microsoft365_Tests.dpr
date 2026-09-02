@@ -15,7 +15,9 @@ uses
   DUnitX.TestFramework,
   MSGraph.Graph.Http.Transport.Fake in 'MSGraph.Graph.Http.Transport.Fake.pas',
   MSGraph.Graph.Http.Tests in 'MSGraph.Graph.Http.Tests.pas',
-  MSGraph.Graph.Mail.Tests in 'MSGraph.Graph.Mail.Tests.pas';
+  MSGraph.Graph.Http.Redaction.Tests in 'MSGraph.Graph.Http.Redaction.Tests.pas',
+  MSGraph.Graph.Mail.Tests in 'MSGraph.Graph.Mail.Tests.pas',
+  MSGraph.Graph.Mail.Attachments.Tests in 'MSGraph.Graph.Mail.Attachments.Tests.pas';
 
 { keep comment here to protect the following conditional from being removed by the IDE when adding a unit }
 {$IFNDEF TESTINSIGHT}

@@ -16,6 +16,7 @@ type
     class function GetObject(const Obj: TJSONObject; const Path: string): TJSONObject;
     class function GetArray(const Obj: TJSONObject; const Path: string): TJSONArray;
     class function ArrayItem(const Arr: TJSONArray; const Index: Integer): TJSONObject;
+    class function ArrayString(const Arr: TJSONArray; const Index: Integer): string;
 
     class function HasError(const Obj: TJSONObject): Boolean;
     class function GetErrorMessage(const Obj: TJSONObject): string;
@@ -105,6 +106,19 @@ begin
 
   if Arr.Items[Index] is TJSONObject then
     Result := TJSONObject(Arr.Items[Index]);
+end;
+
+class function TGraphJson.ArrayString(const Arr: TJSONArray; const Index: Integer): string;
+begin
+  Result := '';
+  if not Assigned(Arr) then
+    Exit;
+
+  if (Index < 0) or (Index >= Arr.Count) then
+    Exit;
+
+  if Arr.Items[Index] is TJSONString then
+    Result := TJSONString(Arr.Items[Index]).Value;
 end;
 
 class function TGraphJson.HasError(const Obj: TJSONObject): Boolean;

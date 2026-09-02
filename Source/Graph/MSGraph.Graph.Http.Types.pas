@@ -12,6 +12,7 @@ type
     Method: string;
     Url: string;
     Body: string;
+    BodyBytes: TBytes;
     Headers: TArray<TNetHeader>;
   end;
 
@@ -20,8 +21,10 @@ type
     StatusCode: Integer;
     Content: string;
     ContentBytes: TBytes;
+    Headers: TArray<TNetHeader>;
 
     function IsSuccess: Boolean;
+    function HeaderValue(const Name: string): string;
   end;
 
 implementation
@@ -29,6 +32,20 @@ implementation
 function TGraphHttpResponse.IsSuccess: Boolean;
 begin
   Result := (StatusCode >= 200) and (StatusCode < 300);
+end;
+
+function TGraphHttpResponse.HeaderValue(const Name: string): string;
+begin
+  Result := '';
+
+  for var Header in Headers do
+  begin
+    if SameText(Header.Name, Name) then
+    begin
+      Result := Header.Value;
+      Exit;
+    end;
+  end;
 end;
 
 end.
