@@ -72,7 +72,7 @@ type
     procedure FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
       const TotalSize: Int64);
     procedure FailMissingAttachmentId(const FileName: string; const TotalSize: Int64);
-    function TryCancelUploadSession(const UploadUrl: string; out FailureNote: string): Boolean;
+    function CancelNoteFor(const UploadUrl: string): string;
     procedure CancelUploadSession(const UploadUrl: string);
 
     function IsBelowUploadSessionMinimum(const Response: TGraphHttpResponse): Boolean;
@@ -110,6 +110,7 @@ const
 
   UploadSessionEndpointSuffix = '/attachments/createUploadSession';
   AttachmentsEndpointSuffix = '/attachments';
+  AttachmentsKeyMarker = 'Attachments(';
   OdataTypeFileAttachment = '#microsoft.graph.fileAttachment';
   AttachmentTypeFile = 'file';
   HeaderLocation = 'Location';
@@ -429,52 +430,33 @@ end;
 
 function TAttachmentUploader.AttachmentIdFromLocation(const Location: string): string;
 begin
-  if Location.IsEmpty then
-  begin
-    Result := '';
+  Result := '';
+
+  const MarkerPosition = Location.LastIndexOf(AttachmentsKeyMarker);
+  const HasMarker = (MarkerPosition >= 0);
+  if not HasMarker then
     Exit;
-  end;
 
-  const Segments = Location.Split(['/']);
-  const HasSegments = (Length(Segments) > 0);
-  if not HasSegments then
-  begin
-    Result := '';
+  const KeyStart = MarkerPosition + Length(AttachmentsKeyMarker);
+  const KeyEnd = Location.IndexOf(')', KeyStart);
+  const HasClosingParen = (KeyEnd >= 0);
+  if not HasClosingParen then
     Exit;
-  end;
 
-  var LastSegment := Segments[High(Segments)];
+  const EncodedKey = Location.Substring(KeyStart, KeyEnd - KeyStart);
 
-  const QueryStart = LastSegment.IndexOf('?');
-  const HasQuery = (QueryStart >= 0);
-  if HasQuery then
-    LastSegment := LastSegment.Substring(0, QueryStart);
-
-  Result := UnwrapODataKey(LastSegment);
+  Result := UnwrapODataKey(EncodedKey);
 end;
 
 function TAttachmentUploader.UnwrapODataKey(const Segment: string): string;
 begin
-  const KeyStart = Segment.IndexOf('(');
-  const KeyEnd = Segment.LastIndexOf(')');
-
-  const HasODataKey = ((KeyStart >= 0) and (KeyEnd > KeyStart));
-  if not HasODataKey then
-  begin
-    Result := Segment;
-    Exit;
-  end;
-
-  const Key = Segment.Substring(KeyStart + 1, KeyEnd - KeyStart - 1);
-
-  Result := Key.DeQuotedString('''');
+  Result := TNetEncoding.URL.Decode(Segment).DeQuotedString('''');
 end;
 
 procedure TAttachmentUploader.FailChunkUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Response: TGraphHttpResponse);
 begin
-  var CancelNote: string;
-  TryCancelUploadSession(UploadUrl, CancelNote);
+  const CancelNote = CancelNoteFor(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) failed at bytes %d-%d: HTTP %d - %s. The draft has not been sent.%s',
@@ -485,8 +467,7 @@ end;
 procedure TAttachmentUploader.FailInterruptedUpload(const UploadUrl: string; const FileName: string;
   const RangeStart, RangeEnd, TotalSize: Int64; const Error: Exception);
 begin
-  var CancelNote: string;
-  TryCancelUploadSession(UploadUrl, CancelNote);
+  const CancelNote = CancelNoteFor(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) was interrupted at bytes %d-%d: %s. The draft has not been sent.%s',
@@ -496,8 +477,7 @@ end;
 procedure TAttachmentUploader.FailStalledUpload(const UploadUrl: string; const FileName: string;
   const ResumeOffset, TotalSize: Int64);
 begin
-  var CancelNote: string;
-  TryCancelUploadSession(UploadUrl, CancelNote);
+  const CancelNote = CancelNoteFor(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) stalled: the server asked to resume at byte %d, which is not past ' +
@@ -508,8 +488,7 @@ end;
 procedure TAttachmentUploader.FailUnconfirmedUpload(const UploadUrl: string; const FileName: string;
   const TotalSize: Int64);
 begin
-  var CancelNote: string;
-  TryCancelUploadSession(UploadUrl, CancelNote);
+  const CancelNote = CancelNoteFor(UploadUrl);
 
   raise EGraphApiException.CreateFmt(
     'Upload of "%s" (%d bytes) sent every byte but was never confirmed by the server. ' +
@@ -524,22 +503,19 @@ begin
     [FileName, TotalSize]);
 end;
 
-function TAttachmentUploader.TryCancelUploadSession(const UploadUrl: string;
-  out FailureNote: string): Boolean;
+function TAttachmentUploader.CancelNoteFor(const UploadUrl: string): string;
 begin
-  FailureNote := '';
+  Result := '';
 
   try
     CancelUploadSession(UploadUrl);
-    Result := True;
   except
     on E: Exception do
     begin
       FGraphClient.Log(LogLevelError,
         Format('Could not cancel the upload session: %s', [E.Message]));
 
-      FailureNote := Format(' Cancelling the upload session failed as well: %s', [E.Message]);
-      Result := False;
+      Result := Format(' Cancelling the upload session failed as well: %s', [E.Message]);
     end;
   end;
 end;

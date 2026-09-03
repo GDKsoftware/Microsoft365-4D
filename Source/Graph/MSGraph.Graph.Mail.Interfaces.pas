@@ -45,6 +45,8 @@ type
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
     function AddAttachment(const MessageId, FileName, ContentType: string;
       const ContentBytes: TBytes): Boolean;
+    function AddAttachmentAndGetId(const MessageId, FileName, ContentType: string;
+      const ContentBytes: TBytes): string;
     function GetMessageMimeContent(const MessageId: string): TBytes;
     function DeltaSyncMessages(const FolderId: string; const DeltaLink: string): TDeltaSyncResult;
     function InitializeDeltaLink(const FolderId: string): string;

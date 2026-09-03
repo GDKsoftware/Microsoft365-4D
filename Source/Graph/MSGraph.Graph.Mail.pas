@@ -55,8 +55,8 @@ type
       CustomHeaderPrefix = 'x-';
       MaxCustomHeaders = 5;
       HeaderNameSeparator = ':';
-      PrintableAsciiFirst = '!';
-      PrintableAsciiLast = '~';
+      FirstPrintableAsciiCharIndex = Ord('!');
+      LastPrintableAsciiCharIndex = Ord('~');
       UnicodeLineSeparator = #$2028;
       UnicodeParagraphSeparator = #$2029;
       UnreadMarker = 'is:unread';
@@ -98,6 +98,8 @@ type
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
     function AddAttachment(const MessageId, FileName, ContentType: string;
       const ContentBytes: TBytes): Boolean;
+    function AddAttachmentAndGetId(const MessageId, FileName, ContentType: string;
+      const ContentBytes: TBytes): string;
     function GetMessageMimeContent(const MessageId: string): TBytes;
     function DeltaSyncMessages(const FolderId: string; const DeltaLink: string): TDeltaSyncResult;
     function InitializeDeltaLink(const FolderId: string): string;
@@ -179,7 +181,7 @@ begin
   Result := False;
   for var Character in Value do
   begin
-    const IsPrintableAscii = (Character >= PrintableAsciiFirst) and (Character <= PrintableAsciiLast);
+    const IsPrintableAscii = (Ord(Character) >= FirstPrintableAsciiCharIndex) and (Ord(Character) <= LastPrintableAsciiCharIndex);
     const IsAllowed = IsPrintableAscii and (Character <> HeaderNameSeparator);
     if not IsAllowed then
     begin
@@ -904,11 +906,17 @@ end;
 function TMailClient.AddAttachment(const MessageId, FileName, ContentType: string;
   const ContentBytes: TBytes): Boolean;
 begin
-  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
-
-  Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
+  AddAttachmentAndGetId(MessageId, FileName, ContentType, ContentBytes);
 
   Result := True;
+end;
+
+function TMailClient.AddAttachmentAndGetId(const MessageId, FileName, ContentType: string;
+  const ContentBytes: TBytes): string;
+begin
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
+
+  Result := Uploader.Upload(MessageEndpoint(MessageId), FileName, ContentType, ContentBytes);
 end;
 
 function TMailClient.GetMessageMimeContent(const MessageId: string): TBytes;
