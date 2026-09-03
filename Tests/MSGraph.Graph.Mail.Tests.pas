@@ -39,6 +39,8 @@ type
     [Test]
     procedure AddAttachment_SendsBase64FileAttachment;
     [Test]
+    procedure AddAttachmentAndGetId_ReturnsAttachmentId;
+    [Test]
     procedure UnstubbedRequest_RaisesException;
 
     [Test]
@@ -246,6 +248,15 @@ begin
   finally
     Body.Free;
   end;
+end;
+
+procedure TMailClientTests.AddAttachmentAndGetId_ReturnsAttachmentId;
+begin
+  FFake.EnqueueResponse(201, '{"id":"attachment-1"}');
+
+  const AttachmentId = FMailClient.AddAttachmentAndGetId('MSG-1', 'note.txt', 'text/plain', TEncoding.UTF8.GetBytes('Hello'));
+
+  Assert.AreEqual('attachment-1', AttachmentId);
 end;
 
 procedure TMailClientTests.UnstubbedRequest_RaisesException;

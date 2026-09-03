@@ -75,6 +75,8 @@ type
     procedure Upload_ChunkRequest_OmitsAuthorizationAndAnchorHeaders;
     [Test]
     procedure Upload_FinalChunk_ReturnsAttachmentIdFromLocationHeader;
+    [Test]
+    procedure Upload_LocationIdContainsEncodedSlash_DecodesId;
 
     [Test]
     procedure Upload_ServerNeverConfirms_CancelsSessionAndReports;
@@ -489,6 +491,23 @@ begin
     AttachmentContentType, MakeZeroedBytes(LargeAttachmentThreshold));
 
   Assert.AreEqual(ExpectedAttachmentId, AttachmentId);
+end;
+
+procedure TAttachmentUploadTests.Upload_LocationIdContainsEncodedSlash_DecodesId;
+begin
+  const LocationWithEncodedSlash = 'https://outlook.office.com/api/v2.0/Users(''ab'')/Messages(''cd'')/' +
+    'Attachments(''AAMk%2FSlash'')';
+
+  EnqueueUploadSession;
+  FFake.EnqueueResponseWithHeaders(201, '', [TNetHeader.Create('Location', LocationWithEncodedSlash)]);
+
+  const Uploader: IAttachmentUploader = TAttachmentUploader.Create(FGraphClient);
+
+  const AttachmentId = Uploader.Upload(MessageEndpointSuffix, AttachmentName,
+    AttachmentContentType, MakeZeroedBytes(LargeAttachmentThreshold));
+
+  Assert.AreEqual('AAMk/Slash', AttachmentId,
+    'an id that contains a slash must be decoded, not cut at the wrong segment');
 end;
 
 procedure TAttachmentUploadTests.Upload_ServerNeverConfirms_CancelsSessionAndReports;

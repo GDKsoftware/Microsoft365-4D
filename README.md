@@ -180,6 +180,15 @@ Mail.AddAttachment(Draft.Id, 'report.pdf', 'application/pdf', TFile.ReadAllBytes
 Mail.SendDraft(Draft.Id);
 ```
 
+A caller that needs the attachment id afterwards — to remove or inspect the attachment later — calls `AddAttachmentAndGetId` instead, which returns the id in place of the plain success flag:
+
+```pascal
+var AttachmentId := Mail.AddAttachmentAndGetId(Draft.Id, 'report.pdf', 'application/pdf',
+  TFile.ReadAllBytes(ReportPath));
+```
+
+Both methods raise the same exceptions on failure; `AddAttachmentAndGetId` only ever returns once the upload succeeded and its id is known.
+
 | Size | Route |
 |------|-------|
 | Below 3 MB | The file is posted as part of the message itself |
@@ -195,7 +204,7 @@ A connection that drops halfway is treated the same way. The transport error is 
 
 Cancelling that session can itself fail. When the `DELETE` answers with a non-success status or does not answer at all, that is logged and appended to the exception the caller already gets, rather than replacing it: the reason the upload failed stays the headline, and the fact that a session was left behind at Microsoft is visible right after it.
 
-The last `PUT` of a successful upload answers `HTTP 201 Created` with a `Location` header holding the attachment id. If that header is missing or holds no id, `EGraphApiException` is raised as well. The upload itself did succeed in that case, and the message says so: the attachment is on the draft, but its id could not be determined, so a caller that needs the id to remove or inspect the attachment later is told instead of being handed an empty string. The upload session is not cancelled, because there is nothing left to cancel.
+The last `PUT` of a successful upload answers `HTTP 201 Created` with a `Location` header holding the attachment id. If that header is missing or holds no id, `EGraphApiException` is raised as well. The upload itself did succeed in that case, and the message says so: the attachment is on the draft, but its id could not be determined, so `AddAttachmentAndGetId` tells the caller instead of handing back an empty string. The upload session is not cancelled, because there is nothing left to cancel.
 
 Graph itself accepts attachments up to 150 MB, but the library caps at 25 MB. That stays under the message size limit of the mailbox, 35 MB by default in Exchange Online, so an upload accepted by the library is not expected to fail later at `SendDraft` for size reasons alone.
 
@@ -263,6 +272,7 @@ The two validation exceptions sit under `EGraphApiException` on purpose: they re
 | `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml, Headers)` | Create draft with custom internet message headers |
 | `UpdateDraft(MessageId, Subject, Body, To, Cc, Bcc, IsHtml)` | Update existing draft |
 | `AddAttachment(MessageId, FileName, ContentType, ContentBytes)` | Attach a file to a draft, picking the message-body route or an upload session by size |
+| `AddAttachmentAndGetId(MessageId, FileName, ContentType, ContentBytes)` | Same as `AddAttachment`, but returns the attachment id instead of a plain success flag |
 | `SendDraft(MessageId)` | Send a draft message |
 | `DeleteDraft(MessageId)` | Delete a draft |
 | `MoveMessage(MessageId, FolderId)` | Move message to folder |
