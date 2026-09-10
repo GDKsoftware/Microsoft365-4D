@@ -212,7 +212,7 @@ Graph itself accepts attachments up to 150 MB, but the library caps at 25 MB. Th
 
 ### 9. Keep Outlook's Replied and Forwarded Markers in Sync
 
-Graph creates a correctly threaded reply, but it leaves the original message untouched. Outlook draws its purple reply arrow and the "You replied to this message on ..." bar from two MAPI properties on that original, so without them a reply made through Graph looks unanswered in Outlook.
+Graph creates a correctly threaded reply, but it leaves the original message untouched. Outlook draws its arrow in the message list and the "You replied to this message on ..." bar from MAPI properties on that original, so without them a reply made through Graph looks unanswered in Outlook.
 
 `CreateReplyDraft` and `ForwardMessage` write those properties themselves:
 
@@ -223,8 +223,11 @@ Mail.ForwardMessage(MessageId, 'FYI', ['colleague@example.com']);
 
 | Property | Value |
 |----------|-------|
+| `Integer 0x1080` (`PidTagIconIndex`) | 261 replied, 262 forwarded |
 | `Integer 0x1081` (`PidTagLastVerbExecuted`) | 102 reply to sender, 103 reply all, 104 forward |
 | `SystemTime 0x1082` (`PidTagLastVerbExecutionTime`) | The moment the verb ran, in UTC |
+
+The three belong together. The bar in the reading pane comes from the verb and its timestamp, the arrow in the message list from the icon index, so writing only the verb leaves the list looking unanswered.
 
 For a reply the marker is written when the draft is created, because the library never sends it: the user does that from Outlook. A draft that is deleted afterwards therefore leaves the original marked as replied. Pass `False` as the last argument to skip the marker, or call `SetMessageLastVerb` yourself at the moment that suits your flow:
 
