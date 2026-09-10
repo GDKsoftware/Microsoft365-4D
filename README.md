@@ -210,6 +210,30 @@ Graph itself accepts attachments up to 150 MB, but the library caps at 25 MB. Th
 
 `Mail.ReadWrite` is required to create the upload session; `Mail.Send` remains required to send the draft.
 
+### 9. Keep Outlook's Replied and Forwarded Markers in Sync
+
+Graph creates a correctly threaded reply, but it leaves the original message untouched. Outlook draws its purple reply arrow and the "You replied to this message on ..." bar from two MAPI properties on that original, so without them a reply made through Graph looks unanswered in Outlook.
+
+`CreateReplyDraft` and `ForwardMessage` write those properties themselves:
+
+```delphi
+Mail.CreateReplyDraft(MessageId, '<p>Thanks!</p>', [], True);
+Mail.ForwardMessage(MessageId, 'FYI', ['colleague@example.com']);
+```
+
+| Property | Value |
+|----------|-------|
+| `Integer 0x1081` (`PidTagLastVerbExecuted`) | 102 reply to sender, 103 reply all, 104 forward |
+| `SystemTime 0x1082` (`PidTagLastVerbExecutionTime`) | The moment the verb ran, in UTC |
+
+For a reply the marker is written when the draft is created, because the library never sends it: the user does that from Outlook. A draft that is deleted afterwards therefore leaves the original marked as replied. Pass `False` as the last argument to skip the marker, or call `SetMessageLastVerb` yourself at the moment that suits your flow:
+
+```delphi
+Mail.CreateReplyDraft(MessageId, Body, [], True, True, False);
+Mail.SendDraft(DraftId);
+Mail.SetMessageLastVerb(MessageId, TMailLastVerb.ReplyToAll);
+```
+
 ## Project Structure
 
 ```
@@ -275,6 +299,9 @@ The two validation exceptions sit under `EGraphApiException` on purpose: they re
 | `AddAttachmentAndGetId(MessageId, FileName, ContentType, ContentBytes)` | Same as `AddAttachment`, but returns the attachment id instead of a plain success flag |
 | `SendDraft(MessageId)` | Send a draft message |
 | `DeleteDraft(MessageId)` | Delete a draft |
+| `CreateReplyDraft(MessageId, Body, Cc, IsHtml, ReplyAll, MarkOriginalAsReplied)` | Create a threaded reply as a draft; marks the original as replied unless you pass `False` |
+| `ForwardMessage(MessageId, Comment, Recipients, MarkOriginalAsForwarded)` | Forward a message; marks the original as forwarded unless you pass `False` |
+| `SetMessageLastVerb(MessageId, Verb)` | Record replied/forwarded on a message, so Outlook shows the arrow and the "You replied on ..." bar |
 | `MoveMessage(MessageId, FolderId)` | Move message to folder |
 | `ListMailFolders(ParentFolderId)` | List mail folders |
 | `GetMailboxSignature` | Get HTML signature |

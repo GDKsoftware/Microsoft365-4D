@@ -26,6 +26,8 @@ type
       const ExpectedMessage: string);
     function RequestJsonAt(const RequestIndex: Integer): TJSONObject;
     function PostedDraftJson: TJSONObject;
+    procedure EnqueueReplyResponses;
+    function ExtendedPropertyValue(const RequestIndex: Integer; const PropertyId: string): string;
   public
     [Setup]
     procedure Setup;
@@ -68,12 +70,24 @@ type
     procedure CreateDraft_FiveHeaders_IsAccepted;
     [Test]
     procedure UpdateDraft_OmitsInternetMessageHeaders;
+
+    [Test]
+    procedure CreateReplyDraft_ReplyAll_MarksOriginalAsRepliedToAll;
+    [Test]
+    procedure CreateReplyDraft_ReplyToSender_MarksOriginalAsRepliedToSender;
+    [Test]
+    procedure CreateReplyDraft_MarkOriginalDisabled_SkipsLastVerbPatch;
+    [Test]
+    procedure SetMessageLastVerb_SendsExecutionTimeInUtc;
+    [Test]
+    procedure ForwardMessage_MarksOriginalAsForwarded;
   end;
 
 implementation
 
 uses
   System.SysUtils,
+  System.DateUtils,
   MSGraph.Graph.JsonHelper,
   MSGraph.Graph.Mail;
 
@@ -89,6 +103,25 @@ const
   DraftRequestCount = 2;
   RejectedBeforeRequest = 'an invalid header must be rejected before any request';
   InternetMessageHeadersKey = 'internetMessageHeaders';
+  OriginalMessageId = 'AAMkOriginal';
+  OriginalMessageResponse = '{"id":"AAMkOriginal","subject":"Question","from":{"emailAddress":' +
+    '{"name":"Jane","address":"jane@example.com"}},"receivedDateTime":"2026-09-10T07:46:38Z",' +
+    '"body":{"contentType":"html","content":"<p>Hi</p>"}}';
+  ReplyDraftResponse = '{"id":"AAMkReply"}';
+  ReplyBody = '<p>Answer</p>';
+  EmptyJsonResponse = '{}';
+  ExtendedPropertiesKey = 'singleValueExtendedProperties';
+  ExtendedPropertyIdKey = 'id';
+  ExtendedPropertyValueKey = 'value';
+  LastVerbExecutedId = 'Integer 0x1081';
+  LastVerbExecutionTimeId = 'SystemTime 0x1082';
+  UtcSuffix = 'Z';
+  VerbReplyToSender = '102';
+  VerbReplyToAll = '103';
+  VerbForward = '104';
+  ReplyRequestCount = 3;
+  ReplyWithoutMarkerRequestCount = 2;
+  LastVerbRequestIndex = 2;
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -155,6 +188,38 @@ begin
   Assert.AreEqual(DraftRequestCount, FFake.RequestCount,
     'CreateDraft fetches the signature first, then posts the draft');
   Result := RequestJsonAt(DraftRequestIndex);
+end;
+
+procedure TMailClientTests.EnqueueReplyResponses;
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+  FFake.EnqueueResponse(201, ReplyDraftResponse);
+  FFake.EnqueueResponse(200, EmptyJsonResponse);
+end;
+
+function TMailClientTests.ExtendedPropertyValue(const RequestIndex: Integer;
+  const PropertyId: string): string;
+begin
+  Result := '';
+
+  const Body = RequestJsonAt(RequestIndex);
+  try
+    const Properties = TGraphJson.GetArray(Body, ExtendedPropertiesKey);
+    Assert.IsNotNull(Properties, Format('the patch must carry %s', [ExtendedPropertiesKey]));
+
+    for var ExtendedProperty in Properties do
+    begin
+      const PropertyObject = ExtendedProperty as TJSONObject;
+      const IsRequestedProperty = (JsonString(PropertyObject, ExtendedPropertyIdKey) = PropertyId);
+      if IsRequestedProperty then
+      begin
+        Result := JsonString(PropertyObject, ExtendedPropertyValueKey);
+        Break;
+      end;
+    end;
+  finally
+    Body.Free;
+  end;
 end;
 
 procedure TMailClientTests.Setup;
@@ -386,6 +451,71 @@ begin
   finally
     Body.Free;
   end;
+end;
+
+procedure TMailClientTests.CreateReplyDraft_ReplyAll_MarksOriginalAsRepliedToAll;
+begin
+  EnqueueReplyResponses;
+
+  FMailClient.CreateReplyDraft(OriginalMessageId, ReplyBody, [], True);
+
+  Assert.AreEqual(ReplyRequestCount, FFake.RequestCount,
+    'a reply reads the original, posts the reply and then marks the original');
+
+  const Patched = FFake.RequestAt(LastVerbRequestIndex);
+  Assert.AreEqual('PATCH', Patched.Method);
+  Assert.IsTrue(Patched.Url.EndsWith(Format('/me/messages/%s', [OriginalMessageId])),
+    Format('the last verb belongs on the original message: %s', [Patched.Url]));
+  Assert.AreEqual(VerbReplyToAll, ExtendedPropertyValue(LastVerbRequestIndex, LastVerbExecutedId),
+    'reply all must be recorded as MAPI verb 103');
+end;
+
+procedure TMailClientTests.CreateReplyDraft_ReplyToSender_MarksOriginalAsRepliedToSender;
+begin
+  EnqueueReplyResponses;
+
+  FMailClient.CreateReplyDraft(OriginalMessageId, ReplyBody, [], True, False);
+
+  Assert.AreEqual(VerbReplyToSender, ExtendedPropertyValue(LastVerbRequestIndex, LastVerbExecutedId),
+    'a reply to the sender only must be recorded as MAPI verb 102');
+end;
+
+procedure TMailClientTests.CreateReplyDraft_MarkOriginalDisabled_SkipsLastVerbPatch;
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+  FFake.EnqueueResponse(201, ReplyDraftResponse);
+
+  FMailClient.CreateReplyDraft(OriginalMessageId, ReplyBody, [], True, True, False);
+
+  Assert.AreEqual(ReplyWithoutMarkerRequestCount, FFake.RequestCount,
+    'without marking, a reply only reads the original and posts the reply');
+end;
+
+procedure TMailClientTests.SetMessageLastVerb_SendsExecutionTimeInUtc;
+begin
+  FFake.EnqueueResponse(200, EmptyJsonResponse);
+
+  Assert.IsTrue(FMailClient.SetMessageLastVerb(OriginalMessageId, TMailLastVerb.ReplyToSender));
+
+  const ExecutedAt = ExtendedPropertyValue(0, LastVerbExecutionTimeId);
+  const IsUtc = ExecutedAt.EndsWith(UtcSuffix);
+  Assert.IsTrue(IsUtc, Format('the execution time must be in UTC: %s', [ExecutedAt]));
+
+  const Parsed = ISO8601ToDate(ExecutedAt, True);
+  const IsValidTimestamp = (Parsed > 0);
+  Assert.IsTrue(IsValidTimestamp,
+    Format('the execution time must be a valid ISO 8601 timestamp: %s', [ExecutedAt]));
+end;
+
+procedure TMailClientTests.ForwardMessage_MarksOriginalAsForwarded;
+begin
+  FFake.EnqueueResponse(202, EmptyJsonResponse);
+  FFake.EnqueueResponse(200, EmptyJsonResponse);
+
+  Assert.IsTrue(FMailClient.ForwardMessage(OriginalMessageId, 'FYI', [Recipient]));
+
+  Assert.AreEqual(VerbForward, ExtendedPropertyValue(1, LastVerbExecutedId),
+    'a forward must be recorded as MAPI verb 104');
 end;
 
 initialization

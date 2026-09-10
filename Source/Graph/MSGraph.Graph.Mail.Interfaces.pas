@@ -35,13 +35,16 @@ type
     function GetMailboxSignature: string;
     function CreateReplyDraft(const MessageId: string; const Body: string;
       const CcRecipients: TArray<string>; const IsHtml: Boolean;
-      const ReplyAll: Boolean = True): TDraftResult;
+      const ReplyAll: Boolean = True;
+      const MarkOriginalAsReplied: Boolean = True): TDraftResult;
+    function SetMessageLastVerb(const MessageId: string; const Verb: TMailLastVerb): Boolean;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
       const Skip: Integer = 0): TSearchMessagesResult;
     function ForwardMessage(const MessageId, Comment: string;
-      const Recipients: TArray<string>): Boolean;
+      const Recipients: TArray<string>;
+      const MarkOriginalAsForwarded: Boolean = True): Boolean;
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
     function AddAttachment(const MessageId, FileName, ContentType: string;
       const ContentBytes: TBytes): Boolean;

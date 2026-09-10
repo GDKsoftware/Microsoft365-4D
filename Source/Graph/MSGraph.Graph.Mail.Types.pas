@@ -10,6 +10,15 @@ type
   EInvalidAttachmentException = class(EGraphApiException);
   EDeltaLinkExpiredException = class(EGraphApiException);
 
+{$SCOPEDENUMS ON}
+  TMailLastVerb = (ReplyToSender, ReplyToAll, Forwarded);
+{$SCOPEDENUMS OFF}
+
+  TMailLastVerbHelper = record helper for TMailLastVerb
+  public
+    function ToMapiValue: Integer;
+  end;
+
   TEmailAddress = record
   public
     Name: string;
@@ -94,6 +103,25 @@ type
   end;
 
 implementation
+
+uses
+  System.SysUtils;
+
+const
+  MapiVerbReplyToSender = 102;
+  MapiVerbReplyToAll    = 103;
+  MapiVerbForward       = 104;
+
+function TMailLastVerbHelper.ToMapiValue: Integer;
+begin
+  case Self of
+    TMailLastVerb.ReplyToSender : Result := MapiVerbReplyToSender;
+    TMailLastVerb.ReplyToAll    : Result := MapiVerbReplyToAll;
+    TMailLastVerb.Forwarded     : Result := MapiVerbForward;
+  else
+    raise ENotSupportedException.CreateFmt('Unsupported mail verb: %d', [Ord(Self)]);
+  end;
+end;
 
 constructor TMailHeader.Create(const HeaderName: string; const HeaderValue: string);
 begin
