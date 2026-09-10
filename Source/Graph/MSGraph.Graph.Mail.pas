@@ -46,6 +46,9 @@ type
     class function BuildQuotedOriginal(const Original: TMailMessage): string; static;
     class function BuildCreateReplyBody(const CombinedBody: string;
       const ContentType: string): TJSONObject; static;
+    class function BuildLastVerbBody(const Verb: TMailLastVerb;
+      const ExecutedAtUtc: TDateTime): TJSONObject; static;
+    class function VerbForReply(const ReplyAll: Boolean): TMailLastVerb; static;
     function ExecuteDeltaPages(const FolderId, SelectFields, DeltaLink: string;
       const ItemProcessor: TProc<TJSONObject>): string;
 
@@ -61,6 +64,11 @@ type
       UnicodeParagraphSeparator = #$2029;
       UnreadMarker = 'is:unread';
       IsReadFalseMarker = 'isread:false';
+      ExtendedPropertiesKey = 'singleValueExtendedProperties';
+      ExtendedPropertyIdKey = 'id';
+      ExtendedPropertyValueKey = 'value';
+      LastVerbExecutedPropertyId = 'Integer 0x1081';
+      LastVerbExecutionTimePropertyId = 'SystemTime 0x1082';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
   public
@@ -88,13 +96,16 @@ type
     function GetMailboxSignature: string;
     function CreateReplyDraft(const MessageId: string; const Body: string;
       const CcRecipients: TArray<string>; const IsHtml: Boolean;
-      const ReplyAll: Boolean = True): TDraftResult;
+      const ReplyAll: Boolean = True;
+      const MarkOriginalAsReplied: Boolean = True): TDraftResult;
+    function SetMessageLastVerb(const MessageId: string; const Verb: TMailLastVerb): Boolean;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
     function ListFolderMessages(const FolderId: string; const Top: Integer = 50;
       const Skip: Integer = 0): TSearchMessagesResult;
     function ForwardMessage(const MessageId, Comment: string;
-      const Recipients: TArray<string>): Boolean;
+      const Recipients: TArray<string>;
+      const MarkOriginalAsForwarded: Boolean = True): Boolean;
     function MarkMessageAsRead(const MessageId: string; const IsRead: Boolean = True): Boolean;
     function AddAttachment(const MessageId, FileName, ContentType: string;
       const ContentBytes: TBytes): Boolean;
@@ -111,6 +122,7 @@ implementation
 
 uses
   System.Character,
+  System.DateUtils,
   System.NetEncoding,
   MSGraph.Graph.JsonHelper,
   MSGraph.Graph.Mail.Attachments;
@@ -681,7 +693,8 @@ end;
 
 function TMailClient.CreateReplyDraft(const MessageId: string; const Body: string;
   const CcRecipients: TArray<string>; const IsHtml: Boolean;
-  const ReplyAll: Boolean = True): TDraftResult;
+  const ReplyAll: Boolean = True;
+  const MarkOriginalAsReplied: Boolean = True): TDraftResult;
 begin
   Result := Default(TDraftResult);
 
@@ -766,6 +779,58 @@ begin
       PatchObj.Free;
     end;
   end;
+
+  if MarkOriginalAsReplied then
+    SetMessageLastVerb(MessageId, VerbForReply(ReplyAll));
+end;
+
+class function TMailClient.VerbForReply(const ReplyAll: Boolean): TMailLastVerb;
+begin
+  if ReplyAll then
+    Result := TMailLastVerb.ReplyToAll
+  else
+    Result := TMailLastVerb.ReplyToSender;
+end;
+
+function TMailClient.SetMessageLastVerb(const MessageId: string; const Verb: TMailLastVerb): Boolean;
+begin
+  const ExecutedAtUtc = TTimeZone.Local.ToUniversalTime(Now);
+
+  var RequestBody := BuildLastVerbBody(Verb, ExecutedAtUtc);
+  try
+    var Response := FGraphClient.Patch(MessageEndpoint(MessageId), RequestBody.ToJSON);
+    try
+      Result := not TGraphJson.HasError(Response);
+      if not Result then
+        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    finally
+      Response.Free;
+    end;
+  finally
+    RequestBody.Free;
+  end;
+end;
+
+class function TMailClient.BuildLastVerbBody(const Verb: TMailLastVerb;
+  const ExecutedAtUtc: TDateTime): TJSONObject;
+begin
+  const MapiValue = Verb.ToMapiValue;
+  const ExecutedAtText = DateToISO8601(ExecutedAtUtc, True);
+
+  var VerbProperty := TJSONObject.Create;
+  VerbProperty.AddPair(ExtendedPropertyIdKey, LastVerbExecutedPropertyId);
+  VerbProperty.AddPair(ExtendedPropertyValueKey, MapiValue.ToString);
+
+  var TimeProperty := TJSONObject.Create;
+  TimeProperty.AddPair(ExtendedPropertyIdKey, LastVerbExecutionTimePropertyId);
+  TimeProperty.AddPair(ExtendedPropertyValueKey, ExecutedAtText);
+
+  var Properties := TJSONArray.Create;
+  Properties.Add(VerbProperty);
+  Properties.Add(TimeProperty);
+
+  Result := TJSONObject.Create;
+  Result.AddPair(ExtendedPropertiesKey, Properties);
 end;
 
 function TMailClient.MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
@@ -925,7 +990,8 @@ begin
 end;
 
 function TMailClient.ForwardMessage(const MessageId, Comment: string;
-  const Recipients: TArray<string>): Boolean;
+  const Recipients: TArray<string>;
+  const MarkOriginalAsForwarded: Boolean = True): Boolean;
 begin
   var RequestBody := TJSONObject.Create;
   try
@@ -943,6 +1009,9 @@ begin
   finally
     RequestBody.Free;
   end;
+
+  if MarkOriginalAsForwarded then
+    SetMessageLastVerb(MessageId, TMailLastVerb.Forwarded);
 end;
 
 function TMailClient.ExecuteDeltaPages(const FolderId, SelectFields, DeltaLink: string;
