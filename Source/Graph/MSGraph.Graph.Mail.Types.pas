@@ -17,6 +17,7 @@ type
   TMailLastVerbHelper = record helper for TMailLastVerb
   public
     function ToMapiValue: Integer;
+    function ToIconIndex: Integer;
   end;
 
   TEmailAddress = record
@@ -112,12 +113,26 @@ const
   MapiVerbReplyToAll    = 103;
   MapiVerbForward       = 104;
 
+  MapiIconReplied   = 261;
+  MapiIconForwarded = 262;
+
 function TMailLastVerbHelper.ToMapiValue: Integer;
 begin
   case Self of
     TMailLastVerb.ReplyToSender : Result := MapiVerbReplyToSender;
     TMailLastVerb.ReplyToAll    : Result := MapiVerbReplyToAll;
     TMailLastVerb.Forwarded     : Result := MapiVerbForward;
+  else
+    raise ENotSupportedException.CreateFmt('Unsupported mail verb: %d', [Ord(Self)]);
+  end;
+end;
+
+function TMailLastVerbHelper.ToIconIndex: Integer;
+begin
+  case Self of
+    TMailLastVerb.ReplyToSender,
+    TMailLastVerb.ReplyToAll : Result := MapiIconReplied;
+    TMailLastVerb.Forwarded  : Result := MapiIconForwarded;
   else
     raise ENotSupportedException.CreateFmt('Unsupported mail verb: %d', [Ord(Self)]);
   end;

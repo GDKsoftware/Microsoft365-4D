@@ -113,6 +113,9 @@ const
   ExtendedPropertiesKey = 'singleValueExtendedProperties';
   ExtendedPropertyIdKey = 'id';
   ExtendedPropertyValueKey = 'value';
+  IconIndexId = 'Integer 0x1080';
+  IconReplied = '261';
+  IconForwarded = '262';
   LastVerbExecutedId = 'Integer 0x1081';
   LastVerbExecutionTimeId = 'SystemTime 0x1082';
   UtcSuffix = 'Z';
@@ -468,6 +471,8 @@ begin
     Format('the last verb belongs on the original message: %s', [Patched.Url]));
   Assert.AreEqual(VerbReplyToAll, ExtendedPropertyValue(LastVerbRequestIndex, LastVerbExecutedId),
     'reply all must be recorded as MAPI verb 103');
+  Assert.AreEqual(IconReplied, ExtendedPropertyValue(LastVerbRequestIndex, IconIndexId),
+    'Outlook draws the reply arrow in the message list from the icon index');
 end;
 
 procedure TMailClientTests.CreateReplyDraft_ReplyToSender_MarksOriginalAsRepliedToSender;
@@ -478,6 +483,8 @@ begin
 
   Assert.AreEqual(VerbReplyToSender, ExtendedPropertyValue(LastVerbRequestIndex, LastVerbExecutedId),
     'a reply to the sender only must be recorded as MAPI verb 102');
+  Assert.AreEqual(IconReplied, ExtendedPropertyValue(LastVerbRequestIndex, IconIndexId),
+    'both reply verbs share the same replied icon');
 end;
 
 procedure TMailClientTests.CreateReplyDraft_MarkOriginalDisabled_SkipsLastVerbPatch;
@@ -516,6 +523,8 @@ begin
 
   Assert.AreEqual(VerbForward, ExtendedPropertyValue(1, LastVerbExecutedId),
     'a forward must be recorded as MAPI verb 104');
+  Assert.AreEqual(IconForwarded, ExtendedPropertyValue(1, IconIndexId),
+    'a forward carries its own icon index');
 end;
 
 initialization

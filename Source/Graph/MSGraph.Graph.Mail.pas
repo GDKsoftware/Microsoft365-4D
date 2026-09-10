@@ -67,6 +67,7 @@ type
       ExtendedPropertiesKey = 'singleValueExtendedProperties';
       ExtendedPropertyIdKey = 'id';
       ExtendedPropertyValueKey = 'value';
+      IconIndexPropertyId = 'Integer 0x1080';
       LastVerbExecutedPropertyId = 'Integer 0x1081';
       LastVerbExecutionTimePropertyId = 'SystemTime 0x1082';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
@@ -815,7 +816,12 @@ class function TMailClient.BuildLastVerbBody(const Verb: TMailLastVerb;
   const ExecutedAtUtc: TDateTime): TJSONObject;
 begin
   const MapiValue = Verb.ToMapiValue;
+  const IconIndex = Verb.ToIconIndex;
   const ExecutedAtText = DateToISO8601(ExecutedAtUtc, True);
+
+  var IconProperty := TJSONObject.Create;
+  IconProperty.AddPair(ExtendedPropertyIdKey, IconIndexPropertyId);
+  IconProperty.AddPair(ExtendedPropertyValueKey, IconIndex.ToString);
 
   var VerbProperty := TJSONObject.Create;
   VerbProperty.AddPair(ExtendedPropertyIdKey, LastVerbExecutedPropertyId);
@@ -826,6 +832,7 @@ begin
   TimeProperty.AddPair(ExtendedPropertyValueKey, ExecutedAtText);
 
   var Properties := TJSONArray.Create;
+  Properties.Add(IconProperty);
   Properties.Add(VerbProperty);
   Properties.Add(TimeProperty);
 
