@@ -93,6 +93,7 @@
         <DCCReference Include="MSGraph.Graph.Http.Redaction.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Mail.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Mail.Attachments.Tests.pas"/>
+        <DCCReference Include="MSGraph.Graph.Calendar.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

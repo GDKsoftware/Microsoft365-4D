@@ -3,6 +3,15 @@ unit MSGraph.Graph.Calendar.Types;
 interface
 
 type
+  {$SCOPEDENUMS ON}
+  TEventSensitivity = (Normal, Personal, Private, Confidential);
+  {$SCOPEDENUMS OFF}
+
+  TEventSensitivityHelper = record helper for TEventSensitivity
+    class function FromGraphValue(const Value: string): TEventSensitivity; static;
+    function GraphValue: string;
+  end;
+
   TAttendee = record
     Name: string;
     Email: string;
@@ -23,6 +32,7 @@ type
     BodyPreview: string;
     WebLink: string;
     ShowAs: string;
+    Sensitivity: TEventSensitivity;
   end;
 
   TScheduleItemEntry = record
@@ -54,5 +64,39 @@ type
   end;
 
 implementation
+
+uses
+  System.SysUtils;
+
+const
+  SensitivityNormal = 'normal';
+  SensitivityPersonal = 'personal';
+  SensitivityPrivate = 'private';
+  SensitivityConfidential = 'confidential';
+  UnsupportedSensitivity = 'Unsupported event sensitivity: %d';
+
+class function TEventSensitivityHelper.FromGraphValue(const Value: string): TEventSensitivity;
+begin
+  for var Candidate := Low(TEventSensitivity) to High(TEventSensitivity) do
+  begin
+    const IsMatch = SameText(Candidate.GraphValue, Value);
+    if IsMatch then
+      Exit(Candidate);
+  end;
+
+  Result := TEventSensitivity.Normal;
+end;
+
+function TEventSensitivityHelper.GraphValue: string;
+begin
+  case Self of
+    TEventSensitivity.Normal       : Result := SensitivityNormal;
+    TEventSensitivity.Personal     : Result := SensitivityPersonal;
+    TEventSensitivity.Private      : Result := SensitivityPrivate;
+    TEventSensitivity.Confidential : Result := SensitivityConfidential;
+  else
+    raise ENotSupportedException.CreateFmt(UnsupportedSensitivity, [Ord(Self)]);
+  end;
+end;
 
 end.

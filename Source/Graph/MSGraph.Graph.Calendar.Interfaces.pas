@@ -20,11 +20,13 @@ type
     function CreateEvent(const Subject: string; const StartDateTime: TDateTime;
       const EndDateTime: TDateTime; const Location: string; const Body: string;
       const Attendees: TArray<string>; const IsAllDay: Boolean;
-      const TimeZone: string = DefaultCalendarTimeZone): TCreateEventResult;
+      const TimeZone: string = DefaultCalendarTimeZone;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
     function UpdateEvent(const EventId: string; const Subject: string;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const Location: string; const Body: string; const Attendees: TArray<string>;
-      const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone): TCreateEventResult;
+      const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
     function DeleteEvent(const EventId: string): Boolean;
     function GetScheduleAvailability(const Schedules: TArray<string>;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;

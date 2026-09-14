@@ -15,11 +15,15 @@ type
     FGraphClient: TGraphHttpClient;
     FOwnsClient: Boolean;
 
+    const
+      SensitivityKey = 'sensitivity';
+
     function DateTimeToISO8601(const Value: TDateTime): string;
     function BuildAttendeesArray(const Attendees: TArray<string>): TJSONArray;
     function BuildEventBody(const Subject: string; const StartDateTime: TDateTime;
       const EndDateTime: TDateTime; const Location: string; const Body: string;
-      const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string): TJSONObject;
+      const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
+      const Sensitivity: TEventSensitivity): TJSONObject;
 
     function EndpointCalendarView: string;
     function EndpointEvents: string;
@@ -52,11 +56,13 @@ type
     function CreateEvent(const Subject: string; const StartDateTime: TDateTime;
       const EndDateTime: TDateTime; const Location: string; const Body: string;
       const Attendees: TArray<string>; const IsAllDay: Boolean;
-      const TimeZone: string = DefaultCalendarTimeZone): TCreateEventResult;
+      const TimeZone: string = DefaultCalendarTimeZone;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
     function UpdateEvent(const EventId: string; const Subject: string;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const Location: string; const Body: string; const Attendees: TArray<string>;
-      const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone): TCreateEventResult;
+      const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
     function DeleteEvent(const EventId: string): Boolean;
     function GetScheduleAvailability(const Schedules: TArray<string>;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
@@ -138,7 +144,8 @@ end;
 
 function TCalendarClient.BuildEventBody(const Subject: string; const StartDateTime: TDateTime;
   const EndDateTime: TDateTime; const Location: string; const Body: string;
-  const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string): TJSONObject;
+  const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
+  const Sensitivity: TEventSensitivity): TJSONObject;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('subject', Subject);
@@ -154,6 +161,11 @@ begin
   Result.AddPair('end', EndObj);
 
   Result.AddPair('isAllDay', TJSONBool.Create(IsAllDay));
+
+  const HasNonDefaultSensitivity = (Sensitivity <> TEventSensitivity.Normal);
+  const SensitivityValue = Sensitivity.GraphValue;
+  if HasNonDefaultSensitivity then
+    Result.AddPair(SensitivityKey, SensitivityValue);
 
   if not Location.Trim.IsEmpty then
   begin
@@ -216,6 +228,9 @@ begin
   Result.WebLink := TGraphJson.GetString(EventObj, 'webLink');
   Result.BodyPreview := TGraphJson.GetString(EventObj, 'bodyPreview');
   Result.ShowAs := TGraphJson.GetString(EventObj, 'showAs');
+
+  const SensitivityValue = TGraphJson.GetString(EventObj, SensitivityKey);
+  Result.Sensitivity := TEventSensitivity.FromGraphValue(SensitivityValue);
 
   var StartObj := TGraphJson.GetObject(EventObj, 'start');
   if Assigned(StartObj) then
@@ -380,7 +395,7 @@ begin
   var EndISO := DateTimeToISO8601(EndDateTime);
 
   var QueryParams := Format(
-    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,bodyPreview',
+    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,bodyPreview,sensitivity',
     [TNetEncoding.URL.Encode(StartISO), TNetEncoding.URL.Encode(EndISO), ActualTop]);
 
   var PreferTokens: TArray<string> := nil;
@@ -405,7 +420,7 @@ begin
   var EndISO := DateTimeToISO8601(EndDateTime);
 
   var QueryParams := Format(
-    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview',
+    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview,sensitivity',
     [TNetEncoding.URL.Encode(StartISO), TNetEncoding.URL.Encode(EndISO), GraphMaxPageSize]);
 
   var PreferTokens := TList<string>.Create;
@@ -462,10 +477,12 @@ end;
 
 function TCalendarClient.CreateEvent(const Subject: string; const StartDateTime: TDateTime;
   const EndDateTime: TDateTime; const Location: string; const Body: string;
-  const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string): TCreateEventResult;
+  const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
+  const Sensitivity: TEventSensitivity): TCreateEventResult;
 begin
   Result := Default(TCreateEventResult);
-  var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone);
+  var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone,
+                                 Sensitivity);
   try
     var Response := FGraphClient.Post(EndpointEvents, EventObj.ToJSON);
     try
@@ -485,10 +502,12 @@ end;
 function TCalendarClient.UpdateEvent(const EventId: string; const Subject: string;
   const StartDateTime: TDateTime; const EndDateTime: TDateTime;
   const Location: string; const Body: string; const Attendees: TArray<string>;
-  const IsAllDay: Boolean; const TimeZone: string): TCreateEventResult;
+  const IsAllDay: Boolean; const TimeZone: string;
+  const Sensitivity: TEventSensitivity): TCreateEventResult;
 begin
   Result := Default(TCreateEventResult);
-  var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone);
+  var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone,
+                                 Sensitivity);
   try
     var Response := FGraphClient.Patch(EndpointEvents + '/' + EventId, EventObj.ToJSON);
     try
