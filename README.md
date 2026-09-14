@@ -315,8 +315,8 @@ The two validation exceptions sit under `EGraphApiException` on purpose: they re
 |--------|-------------|
 | `ListEvents(Start, End, Top, Timezone)` | List calendar events in range |
 | `GetEvent(EventId)` | Get event details |
-| `CreateEvent(Subject, Start, End, Location, Body, Attendees, IsAllDay)` | Create event |
-| `UpdateEvent(EventId, Subject, Start, End, Location, Body, Attendees, IsAllDay)` | Update event |
+| `CreateEvent(Subject, Start, End, Location, Body, Attendees, IsAllDay, TimeZone, Sensitivity)` | Create event; `Sensitivity` is a `TEventSensitivity` (`Normal`, `Personal`, `Private`, `Confidential`), default `Normal` |
+| `UpdateEvent(EventId, Subject, Start, End, Location, Body, Attendees, IsAllDay, TimeZone, Sensitivity)` | Update event; a `Normal` sensitivity leaves the stored value untouched |
 | `DeleteEvent(EventId)` | Delete event |
 | `GetScheduleAvailability(Schedules, Start, End, Timezone)` | Check availability |
 
