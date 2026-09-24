@@ -17,7 +17,9 @@ type
     ['{B2C3D4E5-F6A7-4B5C-9D0E-1F2A3B4C5D6E}']
     function SearchMessages(const Query: string; const FolderId: string;
       const Top: Integer; const Skip: Integer): TSearchMessagesResult;
-    function GetMessage(const MessageId: string; const IncludeBody: Boolean = True): TMailMessage;
+    function GetMessage(const MessageId: string; const IncludeBody: Boolean = True): TMailMessage; overload;
+    function GetMessage(const MessageId: string; const BodyFormat: TMailBodyFormat;
+      const IncludeUniqueBody: Boolean = False): TMailMessage; overload;
     function GetMessageAttachments(const MessageId: string): TArray<TMailAttachment>;
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
@@ -37,6 +39,9 @@ type
       const CcRecipients: TArray<string>; const IsHtml: Boolean;
       const ReplyAll: Boolean = True;
       const MarkOriginalAsReplied: Boolean = True): TDraftResult;
+    function CreateForwardDraft(const MessageId: string; const Body: string;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+      const IsHtml: Boolean; const MarkOriginalAsForwarded: Boolean = True): TDraftResult;
     function SetMessageLastVerb(const MessageId: string; const Verb: TMailLastVerb): Boolean;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;

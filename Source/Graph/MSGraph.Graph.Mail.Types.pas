@@ -12,12 +12,18 @@ type
 
 {$SCOPEDENUMS ON}
   TMailLastVerb = (ReplyToSender, ReplyToAll, Forwarded);
+  TMailBodyFormat = (Html, Text);
 {$SCOPEDENUMS OFF}
 
   TMailLastVerbHelper = record helper for TMailLastVerb
   public
     function ToMapiValue: Integer;
     function ToIconIndex: Integer;
+  end;
+
+  TMailBodyFormatHelper = record helper for TMailBodyFormat
+  public
+    function ToPreferHeader: string;
   end;
 
   TEmailAddress = record
@@ -47,6 +53,7 @@ type
     HasAttachments: Boolean;
     Body: string;
     BodyType: string;
+    UniqueBody: string;
     BodyPreview: string;
     Importance: string;
     ParentFolderId: string;
@@ -116,6 +123,9 @@ const
   MapiIconReplied   = 261;
   MapiIconForwarded = 262;
 
+  PreferBodyHtml = 'Prefer: outlook.body-content-type="html"';
+  PreferBodyText = 'Prefer: outlook.body-content-type="text"';
+
 function TMailLastVerbHelper.ToMapiValue: Integer;
 begin
   case Self of
@@ -135,6 +145,16 @@ begin
     TMailLastVerb.Forwarded  : Result := MapiIconForwarded;
   else
     raise ENotSupportedException.CreateFmt('Unsupported mail verb: %d', [Ord(Self)]);
+  end;
+end;
+
+function TMailBodyFormatHelper.ToPreferHeader: string;
+begin
+  case Self of
+    TMailBodyFormat.Html : Result := PreferBodyHtml;
+    TMailBodyFormat.Text : Result := PreferBodyText;
+  else
+    raise ENotSupportedException.CreateFmt('Unsupported mail body format: %d', [Ord(Self)]);
   end;
 end;
 
