@@ -154,7 +154,7 @@ end;
 
 class function TGraphJson.HasNextPage(const Obj: TJSONObject): Boolean;
 begin
-  Result := Assigned(Obj) and Assigned(Obj.FindValue('@odata.nextLink'));
+  Result := Assigned(Obj) and Assigned(Obj.GetValue('@odata.nextLink'));
 end;
 
 end.
