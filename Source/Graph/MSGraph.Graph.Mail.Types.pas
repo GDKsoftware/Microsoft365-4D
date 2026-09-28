@@ -8,12 +8,14 @@ uses
 type
   EInvalidMailHeaderException = class(EGraphApiException);
   EInvalidAttachmentException = class(EGraphApiException);
+  EAttachmentContentUnavailableException = class(EGraphApiException);
   EInvalidRecipientException = class(EGraphApiException);
   EDeltaLinkExpiredException = class(EGraphApiException);
 
 {$SCOPEDENUMS ON}
   TMailLastVerb = (ReplyToSender, ReplyToAll, Forwarded);
   TMailBodyFormat = (Html, Text);
+  TMailAttachmentKind = (&File, Item, Reference, Unknown);
 {$SCOPEDENUMS OFF}
 
   TMailLastVerbHelper = record helper for TMailLastVerb
@@ -25,6 +27,11 @@ type
   TMailBodyFormatHelper = record helper for TMailBodyFormat
   public
     function ToPreferHeader: string;
+  end;
+
+  TMailAttachmentKindHelper = record helper for TMailAttachmentKind
+  public
+    class function FromODataType(const ODataType: string): TMailAttachmentKind; static;
   end;
 
   TEmailAddress = record
@@ -70,6 +77,7 @@ type
     IsInline: Boolean;
     ContentId: string;
     ContentBytes: string;
+    Kind: TMailAttachmentKind;
   end;
 
   TMailFolder = record
@@ -127,6 +135,10 @@ const
   PreferBodyHtml = 'Prefer: outlook.body-content-type="html"';
   PreferBodyText = 'Prefer: outlook.body-content-type="text"';
 
+  ODataTypeFileAttachment      = '#microsoft.graph.fileAttachment';
+  ODataTypeItemAttachment      = '#microsoft.graph.itemAttachment';
+  ODataTypeReferenceAttachment = '#microsoft.graph.referenceAttachment';
+
 function TMailLastVerbHelper.ToMapiValue: Integer;
 begin
   case Self of
@@ -157,6 +169,21 @@ begin
   else
     raise ENotSupportedException.CreateFmt('Unsupported mail body format: %d', [Ord(Self)]);
   end;
+end;
+
+class function TMailAttachmentKindHelper.FromODataType(const ODataType: string): TMailAttachmentKind;
+begin
+  const IsFileAttachment = (ODataType.IsEmpty or SameText(ODataType, ODataTypeFileAttachment));
+  if IsFileAttachment then
+    Exit(TMailAttachmentKind.&File);
+
+  if SameText(ODataType, ODataTypeItemAttachment) then
+    Exit(TMailAttachmentKind.Item);
+
+  if SameText(ODataType, ODataTypeReferenceAttachment) then
+    Exit(TMailAttachmentKind.Reference);
+
+  Result := TMailAttachmentKind.Unknown;
 end;
 
 constructor TMailHeader.Create(const HeaderName: string; const HeaderValue: string);
