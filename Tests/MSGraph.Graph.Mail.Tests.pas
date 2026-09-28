@@ -119,6 +119,11 @@ type
     [TestCase('ReferenceAttachment', '#microsoft.graph.referenceAttachment')]
     [TestCase('UnknownType', '#microsoft.graph.somethingElse')]
     procedure GetAttachmentContent_NoDownloadableContent_Raises(const ODataType: string);
+
+    [Test]
+    [TestCase('WithNextLink', 'True')]
+    [TestCase('WithoutNextLink', 'False')]
+    procedure SearchMessages_FewerThanTop_HasMoreFollowsNextLink(const HasNextLink: Boolean);
   end;
 
 implementation
@@ -205,6 +210,11 @@ const
   RawValueRequestIndex = 1;
   RawValueUrlSuffix = '/me/messages/' + AttachmentMessageId + '/attachments/' + AttachmentId + '/$value';
   UnexpectedUrlFormat = 'unexpected url: %s';
+  SearchTop = 20;
+  SingleMessageArray = '"value":[{"id":"AAMk1"}]';
+  SinglePageResponse = '{' + SingleMessageArray + '}';
+  FirstOfMorePagesResponse = '{' + SingleMessageArray + ',' +
+    '"@odata.nextLink":"https://graph.microsoft.com/v1.0/me/messages?$skip=1"}';
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -805,6 +815,19 @@ begin
     end,
     EAttachmentContentUnavailableException,
     'an attachment without downloadable content must not return empty content');
+end;
+
+procedure TMailClientTests.SearchMessages_FewerThanTop_HasMoreFollowsNextLink(const HasNextLink: Boolean);
+begin
+  if HasNextLink then
+    FFake.EnqueueResponse(200, FirstOfMorePagesResponse)
+  else
+    FFake.EnqueueResponse(200, SinglePageResponse);
+
+  const SearchResult = FMailClient.SearchMessages('', '', SearchTop, 0);
+
+  Assert.AreEqual(HasNextLink, SearchResult.HasMore,
+    'with fewer messages than top, only @odata.nextLink decides whether there is more');
 end;
 
 initialization
