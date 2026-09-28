@@ -102,6 +102,23 @@ type
     procedure CreateForwardDraft_MarksOriginalAsForwarded;
     [Test]
     procedure CreateForwardDraft_NoRecipients_RaisesBeforeAnyRequest;
+
+    [Test]
+    [TestCase('FileAttachment', '#microsoft.graph.fileAttachment,File')]
+    [TestCase('MissingType', ',File')]
+    [TestCase('ItemAttachment', '#microsoft.graph.itemAttachment,Item')]
+    [TestCase('ReferenceAttachment', '#microsoft.graph.referenceAttachment,Reference')]
+    [TestCase('UnknownType', '#microsoft.graph.somethingElse,Unknown')]
+    procedure FromODataType_PerAttachmentType_ReturnsKind(const ODataType: string;
+      const Expected: TMailAttachmentKind);
+    [Test]
+    procedure GetAttachmentContent_FileAttachment_ReturnsContentBytes;
+    [Test]
+    procedure GetAttachmentContent_ItemAttachment_ReturnsMimeContent;
+    [Test]
+    [TestCase('ReferenceAttachment', '#microsoft.graph.referenceAttachment')]
+    [TestCase('UnknownType', '#microsoft.graph.somethingElse')]
+    procedure GetAttachmentContent_NoDownloadableContent_Raises(const ODataType: string);
   end;
 
 implementation
@@ -109,6 +126,7 @@ implementation
 uses
   System.SysUtils,
   System.DateUtils,
+  System.NetEncoding,
   MSGraph.OAuth2.Types,
   MSGraph.Graph.JsonHelper,
   MSGraph.Graph.Mail;
@@ -174,6 +192,19 @@ const
     '',
     OriginalTextBodyContent);
   ReplyPostRequestIndex = 1;
+  AttachmentMessageId = 'MSG-1';
+  AttachmentId = 'ATT-1';
+  FileAttachmentContentBytes = 'SGVsbG8=';
+  FileAttachmentResponse = '{"@odata.type":"#microsoft.graph.fileAttachment","id":"' + AttachmentId + '",' +
+    '"name":"note.txt","contentType":"text/plain","contentBytes":"' + FileAttachmentContentBytes + '"}';
+  ItemAttachmentResponse = '{"@odata.type":"#microsoft.graph.itemAttachment","id":"' + AttachmentId + '",' +
+    '"name":"Forwarded message","contentType":null}';
+  UndownloadableAttachmentResponseFormat = '{"@odata.type":"%s","id":"' + AttachmentId + '","name":"Link"}';
+  AttachedMimeMessage = 'Subject: Forwarded message'#13#10#13#10'Hello';
+  MimeMessageContentType = 'message/rfc822';
+  RawValueRequestIndex = 1;
+  RawValueUrlSuffix = '/me/messages/' + AttachmentMessageId + '/attachments/' + AttachmentId + '/$value';
+  UnexpectedUrlFormat = 'unexpected url: %s';
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -721,6 +752,59 @@ begin
     'a forward without recipients must be rejected');
 
   Assert.AreEqual(0, FFake.RequestCount, 'no request may go out for a forward without recipients');
+end;
+
+procedure TMailClientTests.FromODataType_PerAttachmentType_ReturnsKind(const ODataType: string;
+  const Expected: TMailAttachmentKind);
+begin
+  const Actual = TMailAttachmentKind.FromODataType(ODataType);
+
+  Assert.AreEqual<TMailAttachmentKind>(Expected, Actual);
+end;
+
+procedure TMailClientTests.GetAttachmentContent_FileAttachment_ReturnsContentBytes;
+begin
+  FFake.EnqueueResponse(200, FileAttachmentResponse);
+
+  const Attachment = FMailClient.GetAttachmentContent(AttachmentMessageId, AttachmentId);
+
+  Assert.AreEqual<TMailAttachmentKind>(TMailAttachmentKind.&File, Attachment.Kind);
+  Assert.AreEqual(FileAttachmentContentBytes, Attachment.ContentBytes);
+  Assert.AreEqual(1, FFake.RequestCount, 'a file attachment carries its content in the first response');
+end;
+
+procedure TMailClientTests.GetAttachmentContent_ItemAttachment_ReturnsMimeContent;
+begin
+  const MimeMessageBytes = TEncoding.UTF8.GetBytes(AttachedMimeMessage);
+  FFake.EnqueueResponse(200, ItemAttachmentResponse);
+  FFake.EnqueueBinaryResponse(200, MimeMessageBytes);
+
+  const Attachment = FMailClient.GetAttachmentContent(AttachmentMessageId, AttachmentId);
+
+  Assert.AreEqual<TMailAttachmentKind>(TMailAttachmentKind.Item, Attachment.Kind);
+  Assert.AreEqual(MimeMessageContentType, Attachment.ContentType);
+
+  const DecodedBytes   = TNetEncoding.Base64String.DecodeStringToBytes(Attachment.ContentBytes);
+  const DecodedMessage = TEncoding.UTF8.GetString(DecodedBytes);
+  Assert.AreEqual(AttachedMimeMessage, DecodedMessage);
+
+  const RawValueRequest = FFake.RequestAt(RawValueRequestIndex);
+  const RawValueUrl     = RawValueRequest.Url;
+  Assert.IsTrue(RawValueUrl.EndsWith(RawValueUrlSuffix), Format(UnexpectedUrlFormat, [RawValueUrl]));
+end;
+
+procedure TMailClientTests.GetAttachmentContent_NoDownloadableContent_Raises(const ODataType: string);
+begin
+  const AttachmentResponse = Format(UndownloadableAttachmentResponseFormat, [ODataType]);
+  FFake.EnqueueResponse(200, AttachmentResponse);
+
+  Assert.WillRaise(
+    procedure
+    begin
+      FMailClient.GetAttachmentContent(AttachmentMessageId, AttachmentId);
+    end,
+    EAttachmentContentUnavailableException,
+    'an attachment without downloadable content must not return empty content');
 end;
 
 initialization

@@ -28,6 +28,10 @@ type
       const BccRecipients: TArray<string>; const IsHtml: Boolean;
       const Headers: TArray<TMailHeader>): TJSONObject;
     function MessageEndpoint(const MessageId: string): string;
+    function AttachmentEndpoint(const MessageId: string; const AttachmentId: string): string;
+    function FetchAttachment(const Endpoint: string): TMailAttachment;
+    class procedure GuardDownloadableAttachment(const Attachment: TMailAttachment); static;
+    function FetchItemAttachmentContent(const Endpoint: string): string;
 
     function FetchWellKnownFolders: TArray<TMailFolder>;
 
@@ -40,6 +44,7 @@ type
     class function ParseMessage(const MsgObj: TJSONObject): TMailMessage; static;
     class function ParseFolder(const FolderObj: TJSONObject): TMailFolder; static;
     class function ParseAttachment(const AttachObj: TJSONObject): TMailAttachment; static;
+    class function ReadODataType(const Obj: TJSONObject): string; static;
     class function BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
       const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string; static;
     class function FormatRecipients(const Recipients: TArray<TEmailAddress>): string; static;
@@ -93,6 +98,11 @@ type
       CreateReplyEndpointFormat = '%s/createReply';
       CreateReplyAllEndpointFormat = '%s/createReplyAll';
       ForwardNeedsRecipient = 'A forward needs at least one recipient';
+      AttachmentEndpointFormat = '%s/attachments/%s';
+      RawValueEndpointFormat = '%s/$value';
+      ODataTypeKey = '@odata.type';
+      MimeMessageContentType = 'message/rfc822';
+      AttachmentContentUnavailable = 'Attachment "%s" has no downloadable content (%s)';
       PlainTextQuoteLines: array[0..6] of string = (
         '%s',
         '',
@@ -159,6 +169,7 @@ uses
   System.Character,
   System.DateUtils,
   System.NetEncoding,
+  System.TypInfo,
   MSGraph.Graph.JsonHelper,
   MSGraph.Graph.Mail.Attachments;
 
@@ -445,6 +456,18 @@ begin
   Result.IsInline := TGraphJson.GetBool(AttachObj, 'isInline');
   Result.ContentId := TGraphJson.GetString(AttachObj, 'contentId');
   Result.ContentBytes := TGraphJson.GetString(AttachObj, 'contentBytes');
+
+  const ODataType = ReadODataType(AttachObj);
+  Result.Kind := TMailAttachmentKind.FromODataType(ODataType);
+end;
+
+class function TMailClient.ReadODataType(const Obj: TJSONObject): string;
+begin
+  Result := '';
+
+  const ODataTypeValue = Obj.GetValue(ODataTypeKey);
+  if Assigned(ODataTypeValue) then
+    Result := ODataTypeValue.Value;
 end;
 
 class function TMailClient.BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
@@ -587,9 +610,30 @@ end;
 
 function TMailClient.GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
 begin
-  var Endpoint := MessageEndpoint(MessageId) + '/attachments/' + TNetEncoding.URL.Encode(AttachmentId);
+  const Endpoint = AttachmentEndpoint(MessageId, AttachmentId);
 
-  var Response := FGraphClient.Get(Endpoint);
+  Result := FetchAttachment(Endpoint);
+  GuardDownloadableAttachment(Result);
+
+  const IsItemAttachment = (Result.Kind = TMailAttachmentKind.Item);
+  if IsItemAttachment then
+  begin
+    Result.ContentBytes := FetchItemAttachmentContent(Endpoint);
+    Result.ContentType  := MimeMessageContentType;
+  end;
+end;
+
+function TMailClient.AttachmentEndpoint(const MessageId: string; const AttachmentId: string): string;
+begin
+  const MessagePath         = MessageEndpoint(MessageId);
+  const EncodedAttachmentId = TNetEncoding.URL.Encode(AttachmentId);
+
+  Result := Format(AttachmentEndpointFormat, [MessagePath, EncodedAttachmentId]);
+end;
+
+function TMailClient.FetchAttachment(const Endpoint: string): TMailAttachment;
+begin
+  const Response = FGraphClient.Get(Endpoint);
   try
     if TGraphJson.HasError(Response) then
       raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
@@ -598,6 +642,25 @@ begin
   finally
     Response.Free;
   end;
+end;
+
+class procedure TMailClient.GuardDownloadableAttachment(const Attachment: TMailAttachment);
+begin
+  const IsDownloadable = (Attachment.Kind in [TMailAttachmentKind.&File, TMailAttachmentKind.Item]);
+  if IsDownloadable then
+    Exit;
+
+  const KindName = GetEnumName(TypeInfo(TMailAttachmentKind), Ord(Attachment.Kind));
+  raise EAttachmentContentUnavailableException.CreateFmt(AttachmentContentUnavailable,
+                                                         [Attachment.Name, KindName]);
+end;
+
+function TMailClient.FetchItemAttachmentContent(const Endpoint: string): string;
+begin
+  const RawValueEndpoint = Format(RawValueEndpointFormat, [Endpoint]);
+  const MimeContent = FGraphClient.GetRawBytes(RawValueEndpoint);
+
+  Result := TNetEncoding.Base64String.EncodeBytesToString(MimeContent);
 end;
 
 function TMailClient.GetMailboxSignature: string;
