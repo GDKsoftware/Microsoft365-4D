@@ -222,7 +222,7 @@ Mail.CreateForwardDraft(MessageId, '<p>Can you pick this up?</p>', ['colleague@e
 Mail.ForwardMessage(MessageId, 'FYI', ['colleague@example.com']);
 ```
 
-`CreateForwardDraft` leaves the forward in Drafts, like `CreateReplyDraft` does for a reply; `ForwardMessage` sends it at once and needs `Mail.Send`. The draft keeps the attachments of the original, and your text goes above the quoted message.
+`CreateForwardDraft` leaves the forward in Drafts, like `CreateReplyDraft` does for a reply; `ForwardMessage` sends it at once and needs `Mail.Send`. The draft keeps the attachments of the original, and your text goes above the quoted message. A plain text draft quotes the original as plain text. A forward without recipients raises `EInvalidRecipientException` before any request is sent.
 
 | Property | Value |
 |----------|-------|
@@ -297,9 +297,10 @@ All library exceptions inherit from `EMSGraphException`:
 | `ETokenStoreException` | `EMSGraphException` | Missing tokens, expired PKCE sessions |
 | `EInvalidMailHeaderException` | `EGraphApiException` | Invalid custom mail header supplied by the caller |
 | `EInvalidAttachmentException` | `EGraphApiException` | Attachment that is empty or larger than the supported maximum |
+| `EInvalidRecipientException` | `EGraphApiException` | A forward without recipients |
 | `EDeltaLinkExpiredException` | `EGraphApiException` | An expired delta link, so a full resynchronisation is needed |
 
-The two validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
+The three validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
 
 ### TMailClient
 

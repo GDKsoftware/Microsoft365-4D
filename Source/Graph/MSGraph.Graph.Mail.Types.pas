@@ -8,6 +8,7 @@ uses
 type
   EInvalidMailHeaderException = class(EGraphApiException);
   EInvalidAttachmentException = class(EGraphApiException);
+  EInvalidRecipientException = class(EGraphApiException);
   EDeltaLinkExpiredException = class(EGraphApiException);
 
 {$SCOPEDENUMS ON}

@@ -79,6 +79,8 @@ type
     [Test]
     procedure CreateReplyDraft_MarkOriginalDisabled_SkipsLastVerbPatch;
     [Test]
+    procedure CreateReplyDraft_PlainText_QuotesOriginalAsPlainText;
+    [Test]
     procedure SetMessageLastVerb_SendsExecutionTimeInUtc;
     [Test]
     procedure ForwardMessage_MarksOriginalAsForwarded;
@@ -95,7 +97,7 @@ type
     [Test]
     procedure CreateForwardDraft_PostsRecipientsAndQuotedOriginal;
     [Test]
-    procedure CreateForwardDraft_PlainText_QuotesOriginalBelowSeparator;
+    procedure CreateForwardDraft_PlainText_QuotesOriginalAsPlainText;
     [Test]
     procedure CreateForwardDraft_MarksOriginalAsForwarded;
     [Test]
@@ -157,6 +159,21 @@ const
   ForwardRequestIndex = 1;
   ForwardRequestCount = 3;
   OriginalBodyContent = '<p>Hi</p>';
+  OriginalTextMessageResponse = '{"id":"AAMkOriginal","subject":"Question","from":{"emailAddress":' +
+    '{"name":"Jane","address":"jane@example.com"}},"receivedDateTime":"2026-09-10T07:46:38Z",' +
+    '"body":{"contentType":"text","content":"Hi"}}';
+  OriginalTextBodyContent = 'Hi';
+  PreferTextValue = 'outlook.body-content-type="text"';
+  PlainTextReplyBody = 'See below';
+  PlainTextQuoteLines: array[0..6] of string = (
+    PlainTextReplyBody,
+    '',
+    '---',
+    'From: jane@example.com',
+    'Subject: Question',
+    '',
+    OriginalTextBodyContent);
+  ReplyPostRequestIndex = 1;
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -536,6 +553,27 @@ begin
     'without marking, a reply only reads the original and posts the reply');
 end;
 
+procedure TMailClientTests.CreateReplyDraft_PlainText_QuotesOriginalAsPlainText;
+begin
+  FFake.EnqueueResponse(200, OriginalTextMessageResponse);
+  FFake.EnqueueResponse(201, ReplyDraftResponse);
+
+  FMailClient.CreateReplyDraft(OriginalMessageId, PlainTextReplyBody, [], False, True, False);
+
+  Assert.AreEqual(PreferTextValue, FFake.HeaderValue(0, PreferHeaderName),
+    'a plain text reply reads the original as plain text, so no markup ends up in the quote');
+
+  const Body = RequestJsonAt(ReplyPostRequestIndex);
+  try
+    const MessageJson = TGraphJson.GetObject(Body, 'message');
+    const BodyJson = TGraphJson.GetObject(MessageJson, 'body');
+    const Expected = string.Join(#13#10, PlainTextQuoteLines);
+    Assert.AreEqual(Expected, TGraphJson.GetString(BodyJson, 'content'));
+  finally
+    Body.Free;
+  end;
+end;
+
 procedure TMailClientTests.SetMessageLastVerb_SendsExecutionTimeInUtc;
 begin
   FFake.EnqueueResponse(200, EmptyJsonResponse);
@@ -637,19 +675,21 @@ begin
   end;
 end;
 
-procedure TMailClientTests.CreateForwardDraft_PlainText_QuotesOriginalBelowSeparator;
+procedure TMailClientTests.CreateForwardDraft_PlainText_QuotesOriginalAsPlainText;
 begin
-  FFake.EnqueueResponse(200, OriginalMessageResponse);
+  FFake.EnqueueResponse(200, OriginalTextMessageResponse);
   FFake.EnqueueResponse(201, ForwardDraftResponse);
 
-  FMailClient.CreateForwardDraft(OriginalMessageId, 'See below', [ForwardRecipient], [], False, False);
+  FMailClient.CreateForwardDraft(OriginalMessageId, PlainTextReplyBody, [ForwardRecipient], [], False, False);
+
+  Assert.AreEqual(PreferTextValue, FFake.HeaderValue(0, PreferHeaderName),
+    'a plain text forward reads the original as plain text, so no markup ends up in the quote');
 
   const Body = RequestJsonAt(ForwardRequestIndex);
   try
     const MessageJson = PostedForwardMessageJson(Body);
     const BodyJson = TGraphJson.GetObject(MessageJson, 'body');
-    const Expected = string.Join(#13#10, ['See below', '', '---', 'From: jane@example.com',
-                                          'Subject: Question', '', OriginalBodyContent]);
+    const Expected = string.Join(#13#10, PlainTextQuoteLines);
     Assert.AreEqual(Expected, TGraphJson.GetString(BodyJson, 'content'));
     Assert.AreEqual('Text', TGraphJson.GetString(BodyJson, 'contentType'));
   finally
@@ -677,7 +717,7 @@ begin
     begin
       FMailClient.CreateForwardDraft(OriginalMessageId, ForwardBody, [], [], True);
     end,
-    EGraphApiException,
+    EInvalidRecipientException,
     'a forward without recipients must be rejected');
 
   Assert.AreEqual(0, FFake.RequestCount, 'no request may go out for a forward without recipients');

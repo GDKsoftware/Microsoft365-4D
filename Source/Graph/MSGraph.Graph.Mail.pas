@@ -47,7 +47,11 @@ type
     class function BuildBodyWithOriginal(const Body: string; const Original: TMailMessage;
       const IsHtml: Boolean): string; static;
     class function ContentTypeFor(const IsHtml: Boolean): string; static;
+    class function BodyFormatFor(const IsHtml: Boolean): TMailBodyFormat; static;
     class function MessageSelectQuery(const IncludeUniqueBody: Boolean): string; static;
+    class procedure GuardForwardRecipients(const ToRecipients: TArray<string>); static;
+    function PostDraftCreation(const Endpoint: string; const RequestBody: TJSONObject): TDraftResult;
+    function ReplyEndpoint(const MessageId: string; const ReplyAll: Boolean): string;
     function BuildCreateForwardBody(const CombinedBody: string; const IsHtml: Boolean;
       const ToRecipients: TArray<string>; const CcRecipients: TArray<string>): TJSONObject;
     class function BuildCreateReplyBody(const CombinedBody: string;
@@ -86,6 +90,8 @@ type
       SelectQueryFormat = '$select=%s';
       SelectQueryWithUniqueBodyFormat = '$select=%s,%s';
       CreateForwardEndpointFormat = '%s/createForward';
+      CreateReplyEndpointFormat = '%s/createReply';
+      CreateReplyAllEndpointFormat = '%s/createReplyAll';
       ForwardNeedsRecipient = 'A forward needs at least one recipient';
       PlainTextQuoteLines: array[0..6] of string = (
         '%s',
@@ -525,16 +531,7 @@ end;
 
 function TMailClient.GetMessage(const MessageId: string; const IncludeBody: Boolean): TMailMessage;
 begin
-  var Response := FGraphClient.Get(MessageEndpoint(MessageId),
-    '$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview,importance,parentFolderId');
-  try
-    if TGraphJson.HasError(Response) then
-      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-
-    Result := ParseMessage(Response);
-  finally
-    Response.Free;
-  end;
+  Result := GetMessage(MessageId, TMailBodyFormat.Html);
 end;
 
 function TMailClient.GetMessage(const MessageId: string; const BodyFormat: TMailBodyFormat;
@@ -764,6 +761,51 @@ begin
     Result := ContentTypeText;
 end;
 
+class function TMailClient.BodyFormatFor(const IsHtml: Boolean): TMailBodyFormat;
+begin
+  if IsHtml then
+    Result := TMailBodyFormat.Html
+  else
+    Result := TMailBodyFormat.Text;
+end;
+
+class procedure TMailClient.GuardForwardRecipients(const ToRecipients: TArray<string>);
+begin
+  const HasRecipients = (Length(ToRecipients) > 0);
+  if not HasRecipients then
+    raise EInvalidRecipientException.Create(ForwardNeedsRecipient);
+end;
+
+function TMailClient.PostDraftCreation(const Endpoint: string; const RequestBody: TJSONObject): TDraftResult;
+begin
+  Result := Default(TDraftResult);
+
+  const RequestJson = RequestBody.ToJSON;
+  const Response = FGraphClient.Post(Endpoint, RequestJson);
+  try
+    if TGraphJson.HasError(Response) then
+    begin
+      const ErrorMessage = TGraphJson.GetErrorMessage(Response);
+      raise EGraphApiException.Create(ErrorMessage);
+    end;
+
+    Result.Id      := TGraphJson.GetString(Response, 'id');
+    Result.Subject := TGraphJson.GetString(Response, 'subject');
+  finally
+    Response.Free;
+  end;
+end;
+
+function TMailClient.ReplyEndpoint(const MessageId: string; const ReplyAll: Boolean): string;
+begin
+  const Endpoint = MessageEndpoint(MessageId);
+
+  if ReplyAll then
+    Result := Format(CreateReplyAllEndpointFormat, [Endpoint])
+  else
+    Result := Format(CreateReplyEndpointFormat, [Endpoint]);
+end;
+
 function TMailClient.BuildCreateForwardBody(const CombinedBody: string; const IsHtml: Boolean;
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>): TJSONObject;
 begin
@@ -799,29 +841,15 @@ function TMailClient.CreateReplyDraft(const MessageId: string; const Body: strin
   const ReplyAll: Boolean = True;
   const MarkOriginalAsReplied: Boolean = True): TDraftResult;
 begin
-  Result := Default(TDraftResult);
-
-  const OriginalMessage = GetMessage(MessageId);
+  const OriginalMessage = GetMessage(MessageId, BodyFormatFor(IsHtml));
   const CombinedBody = BuildBodyWithOriginal(Body, OriginalMessage, IsHtml);
   const ContentType = ContentTypeFor(IsHtml);
 
-  var RequestBody := BuildCreateReplyBody(CombinedBody, ContentType);
-  try
-    var Endpoint: string;
-    if ReplyAll then
-      Endpoint := MessageEndpoint(MessageId) + '/createReplyAll'
-    else
-      Endpoint := MessageEndpoint(MessageId) + '/createReply';
-    var Response := FGraphClient.Post(Endpoint, RequestBody.ToJSON);
-    try
-      if TGraphJson.HasError(Response) then
-        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+  const Endpoint = ReplyEndpoint(MessageId, ReplyAll);
 
-      Result.Id := TGraphJson.GetString(Response, 'id');
-      Result.Subject := TGraphJson.GetString(Response, 'subject');
-    finally
-      Response.Free;
-    end;
+  const RequestBody = BuildCreateReplyBody(CombinedBody, ContentType);
+  try
+    Result := PostDraftCreation(Endpoint, RequestBody);
   finally
     RequestBody.Free;
   end;
@@ -877,32 +905,15 @@ function TMailClient.CreateForwardDraft(const MessageId: string; const Body: str
   const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
   const IsHtml: Boolean; const MarkOriginalAsForwarded: Boolean): TDraftResult;
 begin
-  Result := Default(TDraftResult);
+  GuardForwardRecipients(ToRecipients);
 
-  const HasRecipients = (Length(ToRecipients) > 0);
-  if not HasRecipients then
-    raise EGraphApiException.Create(ForwardNeedsRecipient);
-
-  const OriginalMessage = GetMessage(MessageId);
+  const OriginalMessage = GetMessage(MessageId, BodyFormatFor(IsHtml));
   const CombinedBody = BuildBodyWithOriginal(Body, OriginalMessage, IsHtml);
   const Endpoint = Format(CreateForwardEndpointFormat, [MessageEndpoint(MessageId)]);
 
   const RequestBody = BuildCreateForwardBody(CombinedBody, IsHtml, ToRecipients, CcRecipients);
   try
-    const RequestJson = RequestBody.ToJSON;
-    const Response = FGraphClient.Post(Endpoint, RequestJson);
-    try
-      if TGraphJson.HasError(Response) then
-      begin
-        const ErrorMessage = TGraphJson.GetErrorMessage(Response);
-        raise EGraphApiException.Create(ErrorMessage);
-      end;
-
-      Result.Id := TGraphJson.GetString(Response, 'id');
-      Result.Subject := TGraphJson.GetString(Response, 'subject');
-    finally
-      Response.Free;
-    end;
+    Result := PostDraftCreation(Endpoint, RequestBody);
   finally
     RequestBody.Free;
   end;
