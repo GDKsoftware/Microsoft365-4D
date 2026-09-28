@@ -214,12 +214,15 @@ Graph itself accepts attachments up to 150 MB, but the library caps at 25 MB. Th
 
 Graph creates a correctly threaded reply, but it leaves the original message untouched. Outlook draws its arrow in the message list and the "You replied to this message on ..." bar from MAPI properties on that original, so without them a reply made through Graph looks unanswered in Outlook.
 
-`CreateReplyDraft` and `ForwardMessage` write those properties themselves:
+`CreateReplyDraft`, `CreateForwardDraft` and `ForwardMessage` write those properties themselves:
 
 ```delphi
 Mail.CreateReplyDraft(MessageId, '<p>Thanks!</p>', [], True);
+Mail.CreateForwardDraft(MessageId, '<p>Can you pick this up?</p>', ['colleague@example.com'], [], True);
 Mail.ForwardMessage(MessageId, 'FYI', ['colleague@example.com']);
 ```
+
+`CreateForwardDraft` leaves the forward in Drafts, like `CreateReplyDraft` does for a reply; `ForwardMessage` sends it at once and needs `Mail.Send`. The draft keeps the attachments of the original, and your text goes above the quoted message. A plain text draft quotes the original as plain text. A forward without recipients raises `EInvalidRecipientException` before any request is sent.
 
 | Property | Value |
 |----------|-------|
@@ -236,6 +239,17 @@ Mail.CreateReplyDraft(MessageId, Body, [], True, True, False);
 Mail.SendDraft(DraftId);
 Mail.SetMessageLastVerb(MessageId, TMailLastVerb.ReplyToAll);
 ```
+
+### 10. Read a Message as Plain Text
+
+Most mail arrives as HTML, and the body of a reply carries the whole thread below it. For a summary or a search that is mostly markup and repetition. Ask Graph for plain text, and optionally for the unique body: only the part that this message added to the conversation.
+
+```delphi
+const MailMessage = Mail.GetMessage(MessageId, TMailBodyFormat.Text, True);
+Writeln(MailMessage.UniqueBody);
+```
+
+Graph does the conversion itself, triggered by the header `Prefer: outlook.body-content-type="text"`. `Body` is always filled; `UniqueBody` only when you pass `True`, because selecting it roughly doubles the response.
 
 ## Project Structure
 
@@ -283,9 +297,10 @@ All library exceptions inherit from `EMSGraphException`:
 | `ETokenStoreException` | `EMSGraphException` | Missing tokens, expired PKCE sessions |
 | `EInvalidMailHeaderException` | `EGraphApiException` | Invalid custom mail header supplied by the caller |
 | `EInvalidAttachmentException` | `EGraphApiException` | Attachment that is empty or larger than the supported maximum |
+| `EInvalidRecipientException` | `EGraphApiException` | A forward without recipients |
 | `EDeltaLinkExpiredException` | `EGraphApiException` | An expired delta link, so a full resynchronisation is needed |
 
-The two validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
+The three validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
 
 ### TMailClient
 
@@ -293,6 +308,7 @@ The two validation exceptions sit under `EGraphApiException` on purpose: they re
 |--------|-------------|
 | `SearchMessages(Query, FolderId, Top, Skip)` | Search or list messages |
 | `GetMessage(MessageId)` | Get full message by ID |
+| `GetMessage(MessageId, BodyFormat, IncludeUniqueBody)` | Get a message with its body as HTML or plain text, optionally with the unique body |
 | `GetMessageAttachments(MessageId)` | List attachments |
 | `GetAttachmentContent(MessageId, AttachmentId)` | Get attachment content |
 | `CreateDraft(Subject, Body, To, Cc, Bcc, IsHtml)` | Create draft |
@@ -303,6 +319,7 @@ The two validation exceptions sit under `EGraphApiException` on purpose: they re
 | `SendDraft(MessageId)` | Send a draft message |
 | `DeleteDraft(MessageId)` | Delete a draft |
 | `CreateReplyDraft(MessageId, Body, Cc, IsHtml, ReplyAll, MarkOriginalAsReplied)` | Create a threaded reply as a draft; marks the original as replied unless you pass `False` |
+| `CreateForwardDraft(MessageId, Body, To, Cc, IsHtml, MarkOriginalAsForwarded)` | Create a forward as a draft, with the original's attachments; marks the original as forwarded unless you pass `False` |
 | `ForwardMessage(MessageId, Comment, Recipients, MarkOriginalAsForwarded)` | Forward a message; marks the original as forwarded unless you pass `False` |
 | `SetMessageLastVerb(MessageId, Verb)` | Record replied/forwarded on a message, so Outlook shows the arrow and the "You replied on ..." bar |
 | `MoveMessage(MessageId, FolderId)` | Move message to folder |

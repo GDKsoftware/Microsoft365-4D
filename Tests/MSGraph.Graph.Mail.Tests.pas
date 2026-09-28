@@ -27,6 +27,7 @@ type
     function RequestJsonAt(const RequestIndex: Integer): TJSONObject;
     function PostedDraftJson: TJSONObject;
     procedure EnqueueReplyResponses;
+    function PostedForwardMessageJson(const Body: TJSONObject): TJSONObject;
     function ExtendedPropertyValue(const RequestIndex: Integer; const PropertyId: string): string;
   public
     [Setup]
@@ -78,9 +79,29 @@ type
     [Test]
     procedure CreateReplyDraft_MarkOriginalDisabled_SkipsLastVerbPatch;
     [Test]
+    procedure CreateReplyDraft_PlainText_QuotesOriginalAsPlainText;
+    [Test]
     procedure SetMessageLastVerb_SendsExecutionTimeInUtc;
     [Test]
     procedure ForwardMessage_MarksOriginalAsForwarded;
+
+    [Test]
+    [TestCase('Html', 'Html,outlook.body-content-type="html"')]
+    [TestCase('Text', 'Text,outlook.body-content-type="text"')]
+    procedure GetMessage_BodyFormat_SendsPreferHeader(const BodyFormat: TMailBodyFormat;
+      const ExpectedPrefer: string);
+    [Test]
+    procedure GetMessage_IncludeUniqueBody_SelectsAndReadsUniqueBody;
+    [Test]
+    procedure GetMessage_WithoutUniqueBody_DoesNotSelectUniqueBody;
+    [Test]
+    procedure CreateForwardDraft_PostsRecipientsAndQuotedOriginal;
+    [Test]
+    procedure CreateForwardDraft_PlainText_QuotesOriginalAsPlainText;
+    [Test]
+    procedure CreateForwardDraft_MarksOriginalAsForwarded;
+    [Test]
+    procedure CreateForwardDraft_NoRecipients_RaisesBeforeAnyRequest;
   end;
 
 implementation
@@ -88,6 +109,7 @@ implementation
 uses
   System.SysUtils,
   System.DateUtils,
+  MSGraph.OAuth2.Types,
   MSGraph.Graph.JsonHelper,
   MSGraph.Graph.Mail;
 
@@ -125,6 +147,33 @@ const
   ReplyRequestCount = 3;
   ReplyWithoutMarkerRequestCount = 2;
   LastVerbRequestIndex = 2;
+  PreferHeaderName = 'Prefer';
+  UniqueBodyMessageResponse = '{"id":"AAMkOriginal","subject":"Question",' +
+    '"body":{"contentType":"text","content":"Answer\r\n\r\nFrom: Jane\r\nHi"},' +
+    '"uniqueBody":{"contentType":"text","content":"Answer"}}';
+  UniqueBodyField = 'uniqueBody';
+  ForwardDraftResponse = '{"id":"AAMkForward","subject":"FW: Question"}';
+  ForwardBody = '<div>Can you pick this up?</div>';
+  ForwardRecipient = 'colleague@example.com';
+  ForwardCcRecipient = 'manager@example.com';
+  ForwardRequestIndex = 1;
+  ForwardRequestCount = 3;
+  OriginalBodyContent = '<p>Hi</p>';
+  OriginalTextMessageResponse = '{"id":"AAMkOriginal","subject":"Question","from":{"emailAddress":' +
+    '{"name":"Jane","address":"jane@example.com"}},"receivedDateTime":"2026-09-10T07:46:38Z",' +
+    '"body":{"contentType":"text","content":"Hi"}}';
+  OriginalTextBodyContent = 'Hi';
+  PreferTextValue = 'outlook.body-content-type="text"';
+  PlainTextReplyBody = 'See below';
+  PlainTextQuoteLines: array[0..6] of string = (
+    PlainTextReplyBody,
+    '',
+    '---',
+    'From: jane@example.com',
+    'Subject: Question',
+    '',
+    OriginalTextBodyContent);
+  ReplyPostRequestIndex = 1;
 
 class function TMailClientTests.JsonString(const Obj: TJSONObject; const Name: string): string;
 begin
@@ -198,6 +247,12 @@ begin
   FFake.EnqueueResponse(200, OriginalMessageResponse);
   FFake.EnqueueResponse(201, ReplyDraftResponse);
   FFake.EnqueueResponse(200, EmptyJsonResponse);
+end;
+
+function TMailClientTests.PostedForwardMessageJson(const Body: TJSONObject): TJSONObject;
+begin
+  Result := TGraphJson.GetObject(Body, 'message');
+  Assert.IsNotNull(Result, 'createForward takes the draft content in a message object');
 end;
 
 function TMailClientTests.ExtendedPropertyValue(const RequestIndex: Integer;
@@ -498,6 +553,27 @@ begin
     'without marking, a reply only reads the original and posts the reply');
 end;
 
+procedure TMailClientTests.CreateReplyDraft_PlainText_QuotesOriginalAsPlainText;
+begin
+  FFake.EnqueueResponse(200, OriginalTextMessageResponse);
+  FFake.EnqueueResponse(201, ReplyDraftResponse);
+
+  FMailClient.CreateReplyDraft(OriginalMessageId, PlainTextReplyBody, [], False, True, False);
+
+  Assert.AreEqual(PreferTextValue, FFake.HeaderValue(0, PreferHeaderName),
+    'a plain text reply reads the original as plain text, so no markup ends up in the quote');
+
+  const Body = RequestJsonAt(ReplyPostRequestIndex);
+  try
+    const MessageJson = TGraphJson.GetObject(Body, 'message');
+    const BodyJson = TGraphJson.GetObject(MessageJson, 'body');
+    const Expected = string.Join(#13#10, PlainTextQuoteLines);
+    Assert.AreEqual(Expected, TGraphJson.GetString(BodyJson, 'content'));
+  finally
+    Body.Free;
+  end;
+end;
+
 procedure TMailClientTests.SetMessageLastVerb_SendsExecutionTimeInUtc;
 begin
   FFake.EnqueueResponse(200, EmptyJsonResponse);
@@ -525,6 +601,126 @@ begin
     'a forward must be recorded as MAPI verb 104');
   Assert.AreEqual(IconForwarded, ExtendedPropertyValue(1, IconIndexId),
     'a forward carries its own icon index');
+end;
+
+procedure TMailClientTests.GetMessage_BodyFormat_SendsPreferHeader(const BodyFormat: TMailBodyFormat;
+  const ExpectedPrefer: string);
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+
+  FMailClient.GetMessage(OriginalMessageId, BodyFormat);
+
+  Assert.AreEqual(ExpectedPrefer, FFake.HeaderValue(0, PreferHeaderName),
+    'Graph converts the body only when the Prefer header asks for it');
+end;
+
+procedure TMailClientTests.GetMessage_IncludeUniqueBody_SelectsAndReadsUniqueBody;
+begin
+  FFake.EnqueueResponse(200, UniqueBodyMessageResponse);
+
+  const MailMessage = FMailClient.GetMessage(OriginalMessageId, TMailBodyFormat.Text, True);
+
+  const RequestedUrl = FFake.RequestAt(0).Url;
+  Assert.IsTrue(RequestedUrl.Contains(UniqueBodyField),
+    Format('uniqueBody is only returned when selected: %s', [RequestedUrl]));
+  Assert.AreEqual('Answer', MailMessage.UniqueBody);
+  Assert.IsTrue(MailMessage.Body.Contains('From: Jane'), 'the full body stays available next to the unique body');
+end;
+
+procedure TMailClientTests.GetMessage_WithoutUniqueBody_DoesNotSelectUniqueBody;
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+
+  const MailMessage = FMailClient.GetMessage(OriginalMessageId, TMailBodyFormat.Html);
+
+  const RequestedUrl = FFake.RequestAt(0).Url;
+  Assert.IsFalse(RequestedUrl.Contains(UniqueBodyField),
+    Format('uniqueBody doubles the payload and must be opt-in: %s', [RequestedUrl]));
+  Assert.AreEqual('', MailMessage.UniqueBody);
+end;
+
+procedure TMailClientTests.CreateForwardDraft_PostsRecipientsAndQuotedOriginal;
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+  FFake.EnqueueResponse(201, ForwardDraftResponse);
+  FFake.EnqueueResponse(200, EmptyJsonResponse);
+
+  const Draft = FMailClient.CreateForwardDraft(OriginalMessageId, ForwardBody,
+                                               [ForwardRecipient], [ForwardCcRecipient], True);
+
+  Assert.AreEqual('AAMkForward', Draft.Id);
+  Assert.AreEqual(ForwardRequestCount, FFake.RequestCount,
+    'a forward reads the original, creates the draft and then marks the original');
+
+  const Posted = FFake.RequestAt(ForwardRequestIndex);
+  const ExpectedPath = Format('/me/messages/%s/createForward', [OriginalMessageId]);
+  Assert.AreEqual('POST', Posted.Method);
+  Assert.IsTrue(Posted.Url.EndsWith(ExpectedPath),
+    Format('a forward draft is created with createForward, never with forward: %s', [Posted.Url]));
+
+  const Body = RequestJsonAt(ForwardRequestIndex);
+  try
+    const MessageJson = PostedForwardMessageJson(Body);
+    const ToRecipients = TGraphJson.GetArray(MessageJson, 'toRecipients');
+    const CcRecipients = TGraphJson.GetArray(MessageJson, 'ccRecipients');
+    Assert.AreEqual(1, ToRecipients.Count);
+    Assert.AreEqual(1, CcRecipients.Count);
+
+    const BodyJson = TGraphJson.GetObject(MessageJson, 'body');
+    const Content = TGraphJson.GetString(BodyJson, 'content');
+    Assert.IsTrue(Content.StartsWith(ForwardBody), 'the new text goes above the forwarded message');
+    Assert.IsTrue(Content.Contains(OriginalBodyContent), 'the forwarded message is quoted below');
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TMailClientTests.CreateForwardDraft_PlainText_QuotesOriginalAsPlainText;
+begin
+  FFake.EnqueueResponse(200, OriginalTextMessageResponse);
+  FFake.EnqueueResponse(201, ForwardDraftResponse);
+
+  FMailClient.CreateForwardDraft(OriginalMessageId, PlainTextReplyBody, [ForwardRecipient], [], False, False);
+
+  Assert.AreEqual(PreferTextValue, FFake.HeaderValue(0, PreferHeaderName),
+    'a plain text forward reads the original as plain text, so no markup ends up in the quote');
+
+  const Body = RequestJsonAt(ForwardRequestIndex);
+  try
+    const MessageJson = PostedForwardMessageJson(Body);
+    const BodyJson = TGraphJson.GetObject(MessageJson, 'body');
+    const Expected = string.Join(#13#10, PlainTextQuoteLines);
+    Assert.AreEqual(Expected, TGraphJson.GetString(BodyJson, 'content'));
+    Assert.AreEqual('Text', TGraphJson.GetString(BodyJson, 'contentType'));
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TMailClientTests.CreateForwardDraft_MarksOriginalAsForwarded;
+begin
+  FFake.EnqueueResponse(200, OriginalMessageResponse);
+  FFake.EnqueueResponse(201, ForwardDraftResponse);
+  FFake.EnqueueResponse(200, EmptyJsonResponse);
+
+  FMailClient.CreateForwardDraft(OriginalMessageId, ForwardBody, [ForwardRecipient], [], True);
+
+  Assert.AreEqual(VerbForward, ExtendedPropertyValue(LastVerbRequestIndex, LastVerbExecutedId),
+    'a forward draft must be recorded as MAPI verb 104');
+  Assert.AreEqual(IconForwarded, ExtendedPropertyValue(LastVerbRequestIndex, IconIndexId));
+end;
+
+procedure TMailClientTests.CreateForwardDraft_NoRecipients_RaisesBeforeAnyRequest;
+begin
+  Assert.WillRaise(
+    procedure
+    begin
+      FMailClient.CreateForwardDraft(OriginalMessageId, ForwardBody, [], [], True);
+    end,
+    EInvalidRecipientException,
+    'a forward without recipients must be rejected');
+
+  Assert.AreEqual(0, FFake.RequestCount, 'no request may go out for a forward without recipients');
 end;
 
 initialization

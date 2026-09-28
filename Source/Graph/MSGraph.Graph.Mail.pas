@@ -44,6 +44,16 @@ type
       const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string; static;
     class function FormatRecipients(const Recipients: TArray<TEmailAddress>): string; static;
     class function BuildQuotedOriginal(const Original: TMailMessage): string; static;
+    class function BuildBodyWithOriginal(const Body: string; const Original: TMailMessage;
+      const IsHtml: Boolean): string; static;
+    class function ContentTypeFor(const IsHtml: Boolean): string; static;
+    class function BodyFormatFor(const IsHtml: Boolean): TMailBodyFormat; static;
+    class function MessageSelectQuery(const IncludeUniqueBody: Boolean): string; static;
+    class procedure GuardForwardRecipients(const ToRecipients: TArray<string>); static;
+    function PostDraftCreation(const Endpoint: string; const RequestBody: TJSONObject): TDraftResult;
+    function ReplyEndpoint(const MessageId: string; const ReplyAll: Boolean): string;
+    function BuildCreateForwardBody(const CombinedBody: string; const IsHtml: Boolean;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>): TJSONObject;
     class function BuildCreateReplyBody(const CombinedBody: string;
       const ContentType: string): TJSONObject; static;
     class function BuildLastVerbBody(const Verb: TMailLastVerb;
@@ -72,6 +82,25 @@ type
       LastVerbExecutionTimePropertyId = 'SystemTime 0x1082';
       MessageSelectFields = 'id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,' +
         'isRead,hasAttachments,bodyPreview,body,importance,parentFolderId';
+      UniqueBodyKey = 'uniqueBody';
+      MessageKey = 'message';
+      ContentKey = 'content';
+      ToRecipientsKey = 'toRecipients';
+      CcRecipientsKey = 'ccRecipients';
+      SelectQueryFormat = '$select=%s';
+      SelectQueryWithUniqueBodyFormat = '$select=%s,%s';
+      CreateForwardEndpointFormat = '%s/createForward';
+      CreateReplyEndpointFormat = '%s/createReply';
+      CreateReplyAllEndpointFormat = '%s/createReplyAll';
+      ForwardNeedsRecipient = 'A forward needs at least one recipient';
+      PlainTextQuoteLines: array[0..6] of string = (
+        '%s',
+        '',
+        '---',
+        'From: %s',
+        'Subject: %s',
+        '',
+        '%s');
   public
     constructor Create(const AccessToken: string; const LogProc: TLogProc = nil); overload;
     constructor Create(const GraphClient: TGraphHttpClient; const OwnsClient: Boolean = False); overload;
@@ -79,7 +108,9 @@ type
 
     function SearchMessages(const Query: string; const FolderId: string;
       const Top: Integer; const Skip: Integer): TSearchMessagesResult;
-    function GetMessage(const MessageId: string; const IncludeBody: Boolean = True): TMailMessage;
+    function GetMessage(const MessageId: string; const IncludeBody: Boolean = True): TMailMessage; overload;
+    function GetMessage(const MessageId: string; const BodyFormat: TMailBodyFormat;
+      const IncludeUniqueBody: Boolean = False): TMailMessage; overload;
     function GetMessageAttachments(const MessageId: string): TArray<TMailAttachment>;
     function GetAttachmentContent(const MessageId: string; const AttachmentId: string): TMailAttachment;
     function CreateDraft(const Subject: string; const Body: string;
@@ -99,6 +130,9 @@ type
       const CcRecipients: TArray<string>; const IsHtml: Boolean;
       const ReplyAll: Boolean = True;
       const MarkOriginalAsReplied: Boolean = True): TDraftResult;
+    function CreateForwardDraft(const MessageId: string; const Body: string;
+      const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+      const IsHtml: Boolean; const MarkOriginalAsForwarded: Boolean = True): TDraftResult;
     function SetMessageLastVerb(const MessageId: string; const Verb: TMailLastVerb): Boolean;
     function MoveMessage(const MessageId: string; const DestinationFolderId: string): TMoveMessageResult;
     function ListMailFolders(const ParentFolderId: string = ''): TArray<TMailFolder>;
@@ -293,11 +327,11 @@ begin
   BodyObj.AddPair('content', Body);
   Result.AddPair('body', BodyObj);
 
-  Result.AddPair('toRecipients', BuildRecipientArray(ToRecipients));
+  Result.AddPair(ToRecipientsKey, BuildRecipientArray(ToRecipients));
 
   const HasCcRecipients = (Length(CcRecipients) > 0);
   if HasCcRecipients then
-    Result.AddPair('ccRecipients', BuildRecipientArray(CcRecipients));
+    Result.AddPair(CcRecipientsKey, BuildRecipientArray(CcRecipients));
 
   const HasBccRecipients = (Length(BccRecipients) > 0);
   if HasBccRecipients then
@@ -375,10 +409,14 @@ begin
       Result.MeetingMessageType := 'meetingRequest';
   end;
 
+  const UniqueBodyObj = TGraphJson.GetObject(MsgObj, UniqueBodyKey);
+  if Assigned(UniqueBodyObj) then
+    Result.UniqueBody := TGraphJson.GetString(UniqueBodyObj, ContentKey);
+
   var BodyObj := TGraphJson.GetObject(MsgObj, 'body');
   if not Assigned(BodyObj) then
     Exit;
-  Result.Body := TGraphJson.GetString(BodyObj, 'content');
+  Result.Body := TGraphJson.GetString(BodyObj, ContentKey);
   Result.BodyType := TGraphJson.GetString(BodyObj, 'contentType');
 end;
 
@@ -493,16 +531,36 @@ end;
 
 function TMailClient.GetMessage(const MessageId: string; const IncludeBody: Boolean): TMailMessage;
 begin
-  var Response := FGraphClient.Get(MessageEndpoint(MessageId),
-    '$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,body,bodyPreview,importance,parentFolderId');
+  Result := GetMessage(MessageId, TMailBodyFormat.Html);
+end;
+
+function TMailClient.GetMessage(const MessageId: string; const BodyFormat: TMailBodyFormat;
+  const IncludeUniqueBody: Boolean): TMailMessage;
+begin
+  const Endpoint     = MessageEndpoint(MessageId);
+  const SelectQuery  = MessageSelectQuery(IncludeUniqueBody);
+  const PreferHeader = BodyFormat.ToPreferHeader;
+
+  const Response = FGraphClient.GetWithHeaders(Endpoint, SelectQuery, [PreferHeader]);
   try
     if TGraphJson.HasError(Response) then
-      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+    begin
+      const ErrorMessage = TGraphJson.GetErrorMessage(Response);
+      raise EGraphApiException.Create(ErrorMessage);
+    end;
 
     Result := ParseMessage(Response);
   finally
     Response.Free;
   end;
+end;
+
+class function TMailClient.MessageSelectQuery(const IncludeUniqueBody: Boolean): string;
+begin
+  if IncludeUniqueBody then
+    Result := Format(SelectQueryWithUniqueBodyFormat, [MessageSelectFields, UniqueBodyKey])
+  else
+    Result := Format(SelectQueryFormat, [MessageSelectFields]);
 end;
 
 function TMailClient.GetMessageAttachments(const MessageId: string): TArray<TMailAttachment>;
@@ -680,6 +738,92 @@ begin
     '</font><br><br>' + Original.Body + '</div>';
 end;
 
+class function TMailClient.BuildBodyWithOriginal(const Body: string; const Original: TMailMessage;
+  const IsHtml: Boolean): string;
+begin
+  if IsHtml then
+  begin
+    const QuotedOriginal = BuildQuotedOriginal(Original);
+    Result := Body + QuotedOriginal;
+  end
+  else
+  begin
+    const QuoteFormat = string.Join(#13#10, PlainTextQuoteLines);
+    Result := Format(QuoteFormat, [Body, Original.From.Address, Original.Subject, Original.Body]);
+  end;
+end;
+
+class function TMailClient.ContentTypeFor(const IsHtml: Boolean): string;
+begin
+  if IsHtml then
+    Result := ContentTypeHtml
+  else
+    Result := ContentTypeText;
+end;
+
+class function TMailClient.BodyFormatFor(const IsHtml: Boolean): TMailBodyFormat;
+begin
+  if IsHtml then
+    Result := TMailBodyFormat.Html
+  else
+    Result := TMailBodyFormat.Text;
+end;
+
+class procedure TMailClient.GuardForwardRecipients(const ToRecipients: TArray<string>);
+begin
+  const HasRecipients = (Length(ToRecipients) > 0);
+  if not HasRecipients then
+    raise EInvalidRecipientException.Create(ForwardNeedsRecipient);
+end;
+
+function TMailClient.PostDraftCreation(const Endpoint: string; const RequestBody: TJSONObject): TDraftResult;
+begin
+  Result := Default(TDraftResult);
+
+  const RequestJson = RequestBody.ToJSON;
+  const Response = FGraphClient.Post(Endpoint, RequestJson);
+  try
+    if TGraphJson.HasError(Response) then
+    begin
+      const ErrorMessage = TGraphJson.GetErrorMessage(Response);
+      raise EGraphApiException.Create(ErrorMessage);
+    end;
+
+    Result.Id      := TGraphJson.GetString(Response, 'id');
+    Result.Subject := TGraphJson.GetString(Response, 'subject');
+  finally
+    Response.Free;
+  end;
+end;
+
+function TMailClient.ReplyEndpoint(const MessageId: string; const ReplyAll: Boolean): string;
+begin
+  const Endpoint = MessageEndpoint(MessageId);
+
+  if ReplyAll then
+    Result := Format(CreateReplyAllEndpointFormat, [Endpoint])
+  else
+    Result := Format(CreateReplyEndpointFormat, [Endpoint]);
+end;
+
+function TMailClient.BuildCreateForwardBody(const CombinedBody: string; const IsHtml: Boolean;
+  const ToRecipients: TArray<string>; const CcRecipients: TArray<string>): TJSONObject;
+begin
+  const ContentType = ContentTypeFor(IsHtml);
+  Result := BuildCreateReplyBody(CombinedBody, ContentType);
+
+  const MessageObj = TGraphJson.GetObject(Result, MessageKey);
+  const ToRecipientArray = BuildRecipientArray(ToRecipients);
+  MessageObj.AddPair(ToRecipientsKey, ToRecipientArray);
+
+  const HasCcRecipients = (Length(CcRecipients) > 0);
+  if HasCcRecipients then
+  begin
+    const CcRecipientArray = BuildRecipientArray(CcRecipients);
+    MessageObj.AddPair(CcRecipientsKey, CcRecipientArray);
+  end;
+end;
+
 class function TMailClient.BuildCreateReplyBody(const CombinedBody: string;
   const ContentType: string): TJSONObject;
 begin
@@ -687,9 +831,9 @@ begin
   var MessageObj := TJSONObject.Create;
   var BodyObj := TJSONObject.Create;
   BodyObj.AddPair('contentType', ContentType);
-  BodyObj.AddPair('content', CombinedBody);
+  BodyObj.AddPair(ContentKey, CombinedBody);
   MessageObj.AddPair('body', BodyObj);
-  Result.AddPair('message', MessageObj);
+  Result.AddPair(MessageKey, MessageObj);
 end;
 
 function TMailClient.CreateReplyDraft(const MessageId: string; const Body: string;
@@ -697,43 +841,15 @@ function TMailClient.CreateReplyDraft(const MessageId: string; const Body: strin
   const ReplyAll: Boolean = True;
   const MarkOriginalAsReplied: Boolean = True): TDraftResult;
 begin
-  Result := Default(TDraftResult);
+  const OriginalMessage = GetMessage(MessageId, BodyFormatFor(IsHtml));
+  const CombinedBody = BuildBodyWithOriginal(Body, OriginalMessage, IsHtml);
+  const ContentType = ContentTypeFor(IsHtml);
 
-  var OriginalMessage := GetMessage(MessageId);
+  const Endpoint = ReplyEndpoint(MessageId, ReplyAll);
 
-  var CombinedBody: string;
-  var ContentType: string;
-  if IsHtml then
-  begin
-    CombinedBody := Body + BuildQuotedOriginal(OriginalMessage);
-    ContentType := ContentTypeHtml;
-  end
-  else
-  begin
-    CombinedBody := Body + #13#10#13#10 + '---' + #13#10 +
-      'From: ' + OriginalMessage.From.Address + #13#10 +
-      'Subject: ' + OriginalMessage.Subject + #13#10#13#10 +
-      OriginalMessage.Body;
-    ContentType := ContentTypeText;
-  end;
-
-  var RequestBody := BuildCreateReplyBody(CombinedBody, ContentType);
+  const RequestBody = BuildCreateReplyBody(CombinedBody, ContentType);
   try
-    var Endpoint: string;
-    if ReplyAll then
-      Endpoint := MessageEndpoint(MessageId) + '/createReplyAll'
-    else
-      Endpoint := MessageEndpoint(MessageId) + '/createReply';
-    var Response := FGraphClient.Post(Endpoint, RequestBody.ToJSON);
-    try
-      if TGraphJson.HasError(Response) then
-        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-
-      Result.Id := TGraphJson.GetString(Response, 'id');
-      Result.Subject := TGraphJson.GetString(Response, 'subject');
-    finally
-      Response.Free;
-    end;
+    Result := PostDraftCreation(Endpoint, RequestBody);
   finally
     RequestBody.Free;
   end;
@@ -783,6 +899,27 @@ begin
 
   if MarkOriginalAsReplied then
     SetMessageLastVerb(MessageId, VerbForReply(ReplyAll));
+end;
+
+function TMailClient.CreateForwardDraft(const MessageId: string; const Body: string;
+  const ToRecipients: TArray<string>; const CcRecipients: TArray<string>;
+  const IsHtml: Boolean; const MarkOriginalAsForwarded: Boolean): TDraftResult;
+begin
+  GuardForwardRecipients(ToRecipients);
+
+  const OriginalMessage = GetMessage(MessageId, BodyFormatFor(IsHtml));
+  const CombinedBody = BuildBodyWithOriginal(Body, OriginalMessage, IsHtml);
+  const Endpoint = Format(CreateForwardEndpointFormat, [MessageEndpoint(MessageId)]);
+
+  const RequestBody = BuildCreateForwardBody(CombinedBody, IsHtml, ToRecipients, CcRecipients);
+  try
+    Result := PostDraftCreation(Endpoint, RequestBody);
+  finally
+    RequestBody.Free;
+  end;
+
+  if MarkOriginalAsForwarded then
+    SetMessageLastVerb(MessageId, TMailLastVerb.Forwarded);
 end;
 
 class function TMailClient.VerbForReply(const ReplyAll: Boolean): TMailLastVerb;
