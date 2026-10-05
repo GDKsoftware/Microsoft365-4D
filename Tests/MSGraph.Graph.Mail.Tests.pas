@@ -71,6 +71,10 @@ type
     procedure CreateDraft_FiveHeaders_IsAccepted;
     [Test]
     procedure UpdateDraft_OmitsInternetMessageHeaders;
+    [Test]
+    procedure CreateDraft_ResponseWithSubject_ReturnsSubject;
+    [Test]
+    procedure UpdateDraft_ResponseWithSubject_ReturnsSubject;
 
     [Test]
     procedure CreateReplyDraft_ReplyAll_MarksOriginalAsRepliedToAll;
@@ -144,6 +148,9 @@ const
   DraftBody = 'Body';
   SignatureResponse = '{}';
   DraftCreatedResponse = '{"id":"AAMkHeaders"}';
+  DraftId = 'AAMkDraft';
+  DraftWithSubjectResponse = '{"id":"' + DraftId + '","subject":"' + DraftSubject + '"}';
+  SubjectFromResponse = 'subject must come from the response';
   DraftRequestIndex = 1;
   DraftRequestCount = 2;
   RejectedBeforeRequest = 'an invalid header must be rejected before any request';
@@ -550,6 +557,25 @@ begin
   finally
     Body.Free;
   end;
+end;
+
+procedure TMailClientTests.CreateDraft_ResponseWithSubject_ReturnsSubject;
+begin
+  FFake.EnqueueResponse(200, SignatureResponse);
+  FFake.EnqueueResponse(201, DraftWithSubjectResponse);
+
+  const Draft = FMailClient.CreateDraft(DraftSubject, DraftBody, [Recipient], [], [], False);
+
+  Assert.AreEqual(DraftSubject, Draft.Subject, SubjectFromResponse);
+end;
+
+procedure TMailClientTests.UpdateDraft_ResponseWithSubject_ReturnsSubject;
+begin
+  FFake.EnqueueResponse(200, DraftWithSubjectResponse);
+
+  const Draft = FMailClient.UpdateDraft(DraftId, DraftSubject, DraftBody, [Recipient], [], [], False);
+
+  Assert.AreEqual(DraftSubject, Draft.Subject, SubjectFromResponse);
 end;
 
 procedure TMailClientTests.CreateReplyDraft_ReplyAll_MarksOriginalAsRepliedToAll;

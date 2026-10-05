@@ -44,6 +44,7 @@ type
     class function ParseMessage(const MsgObj: TJSONObject): TMailMessage; static;
     class function ParseFolder(const FolderObj: TJSONObject): TMailFolder; static;
     class function ParseAttachment(const AttachObj: TJSONObject): TMailAttachment; static;
+    class function ParseDraftResult(const Response: TJSONObject): TDraftResult; static;
     class function ReadODataType(const Obj: TJSONObject): string; static;
     class function BuildSearchQueryParams(const SearchQuery: string; const UseSearch: Boolean;
       const FilterUnread: Boolean; const ActualTop: Integer; const Skip: Integer): string; static;
@@ -461,6 +462,13 @@ begin
   Result.Kind := TMailAttachmentKind.FromODataType(ODataType);
 end;
 
+class function TMailClient.ParseDraftResult(const Response: TJSONObject): TDraftResult;
+begin
+  Result := Default(TDraftResult);
+  Result.Id      := TGraphJson.GetString(Response, 'id');
+  Result.Subject := TGraphJson.GetString(Response, 'subject');
+end;
+
 class function TMailClient.ReadODataType(const Obj: TJSONObject): string;
 begin
   Result := '';
@@ -720,7 +728,7 @@ begin
       if TGraphJson.HasError(Response) then
         raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
 
-      Result.Id := TGraphJson.GetString(Response, 'id');
+      Result := ParseDraftResult(Response);
     finally
       Response.Free;
     end;
@@ -741,7 +749,7 @@ begin
       if TGraphJson.HasError(Response) then
         raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
 
-      Result.Id := TGraphJson.GetString(Response, 'id');
+      Result := ParseDraftResult(Response);
     finally
       Response.Free;
     end;
@@ -852,8 +860,7 @@ begin
       raise EGraphApiException.Create(ErrorMessage);
     end;
 
-    Result.Id      := TGraphJson.GetString(Response, 'id');
-    Result.Subject := TGraphJson.GetString(Response, 'subject');
+    Result := ParseDraftResult(Response);
   finally
     Response.Free;
   end;
