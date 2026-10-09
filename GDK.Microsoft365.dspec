@@ -20,7 +20,7 @@ metadata:
 variables:
   packagesource: RAD Studio $compilerNoPrefix$
 targetPlatforms:
-  - compiler from: delphi10.3
+  - compiler from: delphi11.0
     compiler to: delphi13.0
     platforms:
       - win32
