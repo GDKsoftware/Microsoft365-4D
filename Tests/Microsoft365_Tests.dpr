@@ -18,7 +18,9 @@ uses
   MSGraph.Graph.Http.Redaction.Tests in 'MSGraph.Graph.Http.Redaction.Tests.pas',
   MSGraph.Graph.Mail.Tests in 'MSGraph.Graph.Mail.Tests.pas',
   MSGraph.Graph.Mail.Attachments.Tests in 'MSGraph.Graph.Mail.Attachments.Tests.pas',
-  MSGraph.Graph.Calendar.Tests in 'MSGraph.Graph.Calendar.Tests.pas';
+  MSGraph.Graph.Calendar.Tests in 'MSGraph.Graph.Calendar.Tests.pas',
+  MSGraph.Graph.Drive.Path.Tests in 'MSGraph.Graph.Drive.Path.Tests.pas',
+  MSGraph.Graph.Drive.Tests in 'MSGraph.Graph.Drive.Tests.pas';
 
 { keep comment here to protect the following conditional from being removed by the IDE when adding a unit }
 {$IFNDEF TESTINSIGHT}
