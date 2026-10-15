@@ -386,8 +386,8 @@ begin
   AssertContentRange(3, 'bytes 6291456-9437183/10485760');
   AssertContentRange(4, 'bytes 9437184-10485759/10485760');
 
-  Assert.AreEqual(ChunkSize, Length(FFake.RequestAt(1).BodyBytes));
-  Assert.AreEqual(TenMegabytes - (3 * ChunkSize), Length(FFake.RequestAt(4).BodyBytes));
+  Assert.AreEqual(ChunkSize, Integer(Length(FFake.RequestAt(1).BodyBytes)));
+  Assert.AreEqual(TenMegabytes - (3 * ChunkSize), Integer(Length(FFake.RequestAt(4).BodyBytes)));
   Assert.AreEqual(Integer((3 * ChunkSize) mod BytePatternPeriod), Integer(FFake.RequestAt(4).BodyBytes[0]),
     'the last chunk starts at the byte right after the third chunk');
 end;
