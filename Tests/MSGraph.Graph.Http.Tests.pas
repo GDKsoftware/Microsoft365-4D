@@ -102,7 +102,7 @@ begin
   Assert.AreEqual(1, FFake.RequestCount);
   Assert.AreEqual('GET', FFake.LastRequest.Method);
   Assert.AreEqual('https://graph.microsoft.com/v1.0/me', FFake.LastRequest.Url);
-  Assert.AreEqual(2, Length(FFake.LastRequest.Headers), 'GET sends Authorization and Content-Type');
+  Assert.AreEqual(2, Integer(Length(FFake.LastRequest.Headers)), 'GET sends Authorization and Content-Type');
   Assert.AreEqual(ExpectedAuthorization, FFake.HeaderValue(0, 'Authorization'));
   Assert.AreEqual('application/json', FFake.HeaderValue(0, 'Content-Type'));
 end;
@@ -114,7 +114,7 @@ begin
 
   ExecuteAndDiscard;
 
-  Assert.AreEqual(3, Length(FFake.LastRequest.Headers), 'a shared mailbox adds a third header');
+  Assert.AreEqual(3, Integer(Length(FFake.LastRequest.Headers)), 'a shared mailbox adds a third header');
   Assert.AreEqual(SharedMailbox, FFake.HeaderValue(0, 'X-AnchorMailbox'));
 end;
 
@@ -127,7 +127,7 @@ begin
   Response.Free;
 
   Assert.AreEqual('DELETE', FFake.LastRequest.Method);
-  Assert.AreEqual(1, Length(FFake.LastRequest.Headers),
+  Assert.AreEqual(1, Integer(Length(FFake.LastRequest.Headers)),
     'DELETE has always sent Authorization only, even for a shared mailbox');
   Assert.AreEqual(ExpectedAuthorization, FFake.HeaderValue(0, 'Authorization'));
   Assert.AreEqual('', FFake.HeaderValue(0, 'Content-Type'));
@@ -184,7 +184,7 @@ begin
   const Received = FClient.GetRawBytes('/me/messages/MSG-1/$value');
 
   Assert.AreEqual(Payload, TEncoding.UTF8.GetString(Received));
-  Assert.AreEqual(1, Length(FFake.LastRequest.Headers),
+  Assert.AreEqual(1, Integer(Length(FFake.LastRequest.Headers)),
     'the raw variant sends Authorization only');
   Assert.AreEqual(ExpectedAuthorization, FFake.HeaderValue(0, 'Authorization'));
 end;
@@ -255,7 +255,7 @@ begin
     Assert.AreEqual(Payload[Index], Sent[Index],
       Format('byte %d differs from the payload', [Index]));
   end;
-  Assert.AreEqual(2, Length(FFake.LastRequest.Headers),
+  Assert.AreEqual(2, Integer(Length(FFake.LastRequest.Headers)),
     'an upload sends Content-Type and Content-Range only');
   Assert.AreEqual('application/octet-stream', FFake.HeaderValue(0, HeaderContentType));
   Assert.AreEqual(UploadContentRange, FFake.HeaderValue(0, HeaderContentRange));
@@ -273,7 +273,7 @@ begin
 
   Assert.AreEqual('DELETE', FFake.LastRequest.Method);
   Assert.AreEqual(UploadUrl, FFake.LastRequest.Url);
-  Assert.AreEqual(0, Length(FFake.LastRequest.Headers),
+  Assert.AreEqual(0, Integer(Length(FFake.LastRequest.Headers)),
     'cancelling an upload session needs no headers at all');
 end;
 

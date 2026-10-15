@@ -94,6 +94,8 @@
         <DCCReference Include="MSGraph.Graph.Mail.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Mail.Attachments.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Calendar.Tests.pas"/>
+        <DCCReference Include="MSGraph.Graph.Drive.Path.Tests.pas"/>
+        <DCCReference Include="MSGraph.Graph.Drive.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

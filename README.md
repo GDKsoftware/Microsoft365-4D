@@ -27,6 +27,7 @@ Pure Delphi library for Microsoft Graph API integration. Provides OAuth2 authent
 - **Calendar** -list, create, update, delete events, check schedule availability
 - **Contacts** -search, create, update, delete contacts
 - **SharePoint** -browse sites, list/search drive items, get file content
+- **Drive** -read, write, move and delete files in OneDrive or a SharePoint library, with optimistic concurrency and delta queries
 - **Zero dependencies** -uses only `System.Net.HttpClient` (Delphi RTL)
 - **Pluggable logging** -`TLogProc` callback, no global logger
 - **Shared HTTP client** -all Graph clients can share a single `TGraphHttpClient`
@@ -251,6 +252,23 @@ Writeln(MailMessage.UniqueBody);
 
 Graph does the conversion itself, triggered by the header `Prefer: outlook.body-content-type="text"`. `Body` is always filled; `UniqueBody` only when you pass `True`, because selecting it roughly doubles the response.
 
+### 11. Read and Write Files in a Drive
+
+`IGraphDriveClient` works on one drive: the signed-in user's OneDrive (`TGraphDriveConfig.ForMyDrive`) or a SharePoint document library (`TGraphDriveConfig.ForDrive` with the drive id). Paths are relative to the drive root and are percent-encoded by the client.
+
+```delphi
+const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForMyDrive(Tokens.AccessToken));
+
+const Item = Drive.GetItem('Notes/2026-10-14 Idea.md');
+const Content = Drive.DownloadContent(Item.DownloadUrl);
+
+var Request := TGraphDriveUploadRequest.ForPath('Notes/2026-10-14 Idea.md', TGraphDriveWriteMode.IfMatch);
+Request.ETag := Item.ETag;
+Drive.Upload(Request, TEncoding.UTF8.GetBytes('# Idea'));
+```
+
+`IfMatch` fails with `EGraphDrivePreconditionFailedError` when someone else changed the file since `GetItem`; `FailIfExists` fails with `EGraphDriveConflictError` when the name is taken. `Delta('')` starts a delta query and `LatestDeltaLink` returns a link that only reports changes from now on; follow `NextLink` until the page carries a `DeltaLink`, and start over when a link raises `EGraphDriveResyncRequiredError`. The client only follows next and delta links that point at its own Graph base URL, so the access token never leaves for another host, and `DownloadContent` sends no token at all because download URLs are pre-authenticated.
+
 ## Project Structure
 
 ```
@@ -277,6 +295,12 @@ Source/
     MSGraph.Graph.SharePoint.Types.pas    -SharePoint record types (TSite, TDriveItem)
     MSGraph.Graph.SharePoint.Interfaces.pas -ISharePointClient interface
     MSGraph.Graph.SharePoint.pas          -TSharePointClient implementation
+    MSGraph.Graph.Drive.Types.pas         -Drive config, item, page and upload request records
+    MSGraph.Graph.Drive.Exceptions.pas    -EGraphDriveError and one class per HTTP failure
+    MSGraph.Graph.Drive.Interfaces.pas    -IGraphDriveClient interface
+    MSGraph.Graph.Drive.Path.pas          -Path-based item addresses with percent-encoding
+    MSGraph.Graph.Drive.Mapper.pas        -JSON to drive records, HTTP status to exception
+    MSGraph.Graph.Drive.pas               -TGraphDriveClient implementation
 Examples/
     Microsoft365Demo.dpr                  -Console demo with interactive menu
     Microsoft365Demo.App.pas              -Demo application logic
@@ -298,6 +322,7 @@ All library exceptions inherit from `EMSGraphException`:
 | `EInvalidMailHeaderException` | `EGraphApiException` | Invalid custom mail header supplied by the caller |
 | `EInvalidAttachmentException` | `EGraphApiException` | Attachment that is empty or larger than the supported maximum |
 | `EInvalidRecipientException` | `EGraphApiException` | A forward without recipients |
+| `EGraphDriveError` | `EGraphApiException` | Any drive-client failure, with `StatusCode` and Graph's `ErrorCode`; subclasses per failure (`...AuthenticationError`, `...NotFoundError`, `...ConflictError`, `...PreconditionFailedError`, `...ResyncRequiredError`, `...RateLimitError`, `...ServerError`, `...NetworkError`, `...MappingError`, `...ValidationError`) |
 | `EDeltaLinkExpiredException` | `EGraphApiException` | An expired delta link, so a full resynchronisation is needed |
 
 The three validation exceptions sit under `EGraphApiException` on purpose: they report a Graph call that will not succeed, in the same way as a rejected access token does. A caller that handles `EGraphApiException` therefore catches every reason a mail operation can fail, and can still catch the specific class when it wants to tell the cases apart.
@@ -357,6 +382,19 @@ The three validation exceptions sit under `EGraphApiException` on purpose: they 
 | `SearchDriveItems(SiteId, Query, Top)` | Search drive items |
 | `GetDriveItemContent(SiteId, ItemId)` | Get item details + download URL |
 
+### TGraphDriveClient
+
+| Method | Description |
+|--------|-------------|
+| `GetItem(Path)` | Item metadata, including eTag and download URL |
+| `ListChildren(Path)` / `ListNext(NextLink)` | Children of a folder, page by page |
+| `DownloadContent(DownloadUrl)` | File bytes, without sending the token |
+| `Upload(Request, Content)` | Create or replace a file (`Replace`, `FailIfExists`, `IfMatch`) |
+| `CreateFolder(ParentPath, Name)` | Create a folder; fails when the name exists |
+| `Move(Path, NewParentId, NewName)` | Move and/or rename an item |
+| `Delete(Path)` | Move an item to the recycle bin |
+| `Delta(Link)` / `LatestDeltaLink` | Changes since a delta link |
+
 ## Demo Application
 
 The `Examples/` folder contains a console application demonstrating the full OAuth2 flow and all Graph API operations.
@@ -411,6 +449,8 @@ The demo provides an interactive menu with the following options:
 | `Calendars.ReadWrite` | Calendar access |
 | `Contacts.ReadWrite` | Contacts access |
 | `Sites.Read.All` | SharePoint read access |
+| `Files.ReadWrite` | OneDrive read and write access for `TGraphDriveClient` |
+| `Sites.ReadWrite.All` | SharePoint library write access for `TGraphDriveClient` |
 | `User.Read` | User info |
 | `Mail.Read.Shared` | Read shared/delegated mailboxes |
 | `Mail.Send.Shared` | Send from shared/delegated mailboxes |
