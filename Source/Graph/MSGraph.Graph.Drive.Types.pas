@@ -86,6 +86,9 @@ uses
 const
   SMissingDriveId = 'A folder address needs the id of the drive';
   SMissingFolderId = 'A folder address needs the id of the folder';
+  SUnsafeFolderId = 'A folder address needs a real folder id, not "." or ".."';
+  CurrentSegment = '.';
+  ParentSegment = '..';
 
 class function TGraphDriveConfig.ForMyDrive(const AccessToken: string): TGraphDriveConfig;
 begin
@@ -110,6 +113,10 @@ begin
 
   if FolderId.Trim.IsEmpty then
     raise EGraphDriveValidationError.Create(0, '', SMissingFolderId);
+
+  const IsDotSegment = (FolderId = CurrentSegment) or (FolderId = ParentSegment);
+  if IsDotSegment then
+    raise EGraphDriveValidationError.Create(0, '', SUnsafeFolderId);
 
   const EncodedFolderId = TGraphDrivePath.EncodeSegment(FolderId);
 

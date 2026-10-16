@@ -254,7 +254,7 @@ Graph does the conversion itself, triggered by the header `Prefer: outlook.body-
 
 ### 11. Read and Write Files in a Drive
 
-`IGraphDriveClient` works on one drive: the signed-in user's OneDrive (`TGraphDriveConfig.ForMyDrive`) a SharePoint document library (`TGraphDriveConfig.ForDrive` with the drive id), or a folder in someone else's drive such as a shared folder (`TGraphDriveConfig.ForFolder` with the drive id and the folder's item id). Paths are relative to the drive root, or to the folder for `ForFolder`, and are percent-encoded by the client.
+`IGraphDriveClient` works on one drive: the signed-in user's OneDrive (`TGraphDriveConfig.ForMyDrive`), a SharePoint document library (`TGraphDriveConfig.ForDrive` with the drive id), or a folder in someone else's drive such as a shared folder (`TGraphDriveConfig.ForFolder` with the drive id and the folder's item id). Paths are relative to the drive root, or to the folder for `ForFolder`, and are percent-encoded by the client.
 
 ```delphi
 const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForMyDrive(Tokens.AccessToken));

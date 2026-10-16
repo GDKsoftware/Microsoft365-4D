@@ -35,7 +35,17 @@ type
     [Test]
     procedure ForFolder_Delta_UsesTheFolder;
     [Test]
-    procedure ForFolder_EmptyIds_RaisesValidationError;
+    procedure ForFolder_EmptyDriveId_RaisesValidationError;
+    [Test]
+    procedure ForFolder_EmptyFolderId_RaisesValidationError;
+    [Test]
+    [TestCase('Current', '.')]
+    [TestCase('Parent', '..')]
+    procedure ForFolder_DotFolderId_RaisesValidationError(const FolderId: string);
+    [Test]
+    procedure ForFolder_FolderIdWithSpecialCharacters_EncodesItAsOneSegment;
+    [Test]
+    procedure EmptyRootAddress_FallsBackToTheDriveRoot;
     [Test]
     procedure ListChildren_Folder_MapsItemsAndNextLink;
     [Test]
@@ -98,7 +108,8 @@ uses
 const
   Token = 'drive-test-token';
   MyDriveUrl = 'https://graph.microsoft.com/v1.0/me/drive';
-  FolderUrl = 'https://graph.microsoft.com/v1.0/drives/D1/items/F1';
+  DrivesUrl = 'https://graph.microsoft.com/v1.0/drives/D1';
+  FolderUrl = DrivesUrl + '/items/F1';
   ETagValue = '"{1A2B},3"';
   FileFormat = '{"id":"%s","name":"%s","eTag":"%s","cTag":"c-%s","size":12,' +
     '"lastModifiedDateTime":"2026-10-14T10:15:30Z","parentReference":{"id":"parent-1","driveId":"d1"},' +
@@ -226,20 +237,63 @@ begin
   Assert.AreEqual(FolderUrl + '/delta?token=latest', FFake.LastRequest.Url);
 end;
 
-procedure TGraphDriveClientTests.ForFolder_EmptyIds_RaisesValidationError;
+procedure TGraphDriveClientTests.ForFolder_EmptyDriveId_RaisesValidationError;
 begin
-  Assert.WillRaise(
+  Assert.WillRaiseWithMessage(
     procedure
     begin
       TGraphDriveConfig.ForFolder(Token, '', 'F1');
     end,
-    EGraphDriveValidationError);
-  Assert.WillRaise(
+    EGraphDriveValidationError,
+    'A folder address needs the id of the drive');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_EmptyFolderId_RaisesValidationError;
+begin
+  Assert.WillRaiseWithMessage(
     procedure
     begin
       TGraphDriveConfig.ForFolder(Token, 'D1', '');
     end,
-    EGraphDriveValidationError);
+    EGraphDriveValidationError,
+    'A folder address needs the id of the folder');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_DotFolderId_RaisesValidationError(const FolderId: string);
+begin
+  Assert.WillRaiseWithMessage(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, 'D1', FolderId);
+    end,
+    EGraphDriveValidationError,
+    'A folder address needs a real folder id, not "." or ".."');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_FolderIdWithSpecialCharacters_EncodesItAsOneSegment;
+begin
+  const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForFolder(Token, 'D1', 'B7F0!12#3/x'), FFake);
+  FFake.EnqueueResponse(200, FolderJson('d1', 'Notes'));
+
+  Drive.GetItem('Notes');
+
+  Assert.AreEqual(DrivesUrl + '/items/B7F0%2112%233%2Fx:/Notes:', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.EmptyRootAddress_FallsBackToTheDriveRoot;
+begin
+  var Config := Default(TGraphDriveConfig);
+  Config.AccessToken := Token;
+  Config.BaseUrl     := GraphDriveDefaultBaseUrl;
+  Config.DrivePath   := GraphMyDrivePath;
+  const Drive: IGraphDriveClient = TGraphDriveClient.Create(Config, FFake);
+  FFake.EnqueueResponse(200, FolderJson('root-1', 'root'));
+  FFake.EnqueueResponse(200, '{"value":[],"@odata.deltaLink":"' + MyDriveUrl + '/root/delta?token=t1"}');
+
+  Drive.GetItem('');
+  Assert.AreEqual(MyDriveUrl + '/root', FFake.LastRequest.Url);
+  Drive.Delta('');
+  Assert.AreEqual(MyDriveUrl + '/root/delta', FFake.LastRequest.Url);
 end;
 
 procedure TGraphDriveClientTests.ListChildren_Folder_MapsItemsAndNextLink;
