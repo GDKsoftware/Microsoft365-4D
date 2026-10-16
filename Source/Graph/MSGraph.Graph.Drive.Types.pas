@@ -38,7 +38,10 @@ type
   /// A file or folder in a drive. <c>ETag</c> changes with every change to the
   /// item and is the value to send in <c>If-Match</c>; <c>DownloadUrl</c> is a
   /// short-lived, pre-authenticated link (files only); <c>Raw</c> holds the full
-  /// item JSON.
+  /// item JSON. <c>ParentDriveId</c> is the drive the item lives in. A shortcut
+  /// to something in another drive (OneDrive's "Add to My files") carries the
+  /// target in <c>RemoteDriveId</c> and <c>RemoteItemId</c>; <c>RemoteIsFolder</c>
+  /// tells whether that target is a folder.
   /// </summary>
   TGraphDriveItem = record
     Id: string;
@@ -49,9 +52,15 @@ type
     Size: Int64;
     LastModified: string;
     ParentId: string;
+    ParentDriveId: string;
+    RemoteDriveId: string;
+    RemoteItemId: string;
+    RemoteIsFolder: Boolean;
     IsDeleted: Boolean;
     DownloadUrl: string;
     Raw: string;
+
+    function IsFolderShortcut: Boolean;
   end;
 
   /// <summary>
@@ -124,6 +133,11 @@ begin
   Result.BaseUrl     := GraphDriveDefaultBaseUrl;
   Result.DrivePath   := Format(GraphDrivePathFormat, [DriveId]);
   Result.RootAddress := Format(GraphDriveItemAddressFormat, [EncodedFolderId]);
+end;
+
+function TGraphDriveItem.IsFolderShortcut: Boolean;
+begin
+  Result := (not RemoteItemId.IsEmpty) and RemoteIsFolder;
 end;
 
 function TGraphDrivePage.HasMore: Boolean;

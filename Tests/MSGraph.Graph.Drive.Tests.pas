@@ -27,6 +27,16 @@ type
     [Test]
     procedure GetItem_EmptyPath_RequestsTheRoot;
     [Test]
+    procedure GetItem_ParentReference_MapsParentDriveId;
+    [Test]
+    procedure GetItem_FolderShortcut_MapsTargetAndKind;
+    [Test]
+    procedure GetItem_RemoteFile_IsNotAFolderShortcut;
+    [Test]
+    procedure GetItem_PlainFolder_IsNoShortcut;
+    [Test]
+    procedure GetItem_FolderShortcut_KeepsTheRawJson;
+    [Test]
     procedure ForDrive_UsesTheDrivesSegment;
     [Test]
     procedure ForMyDrive_UrlsStayRootRelative;
@@ -115,6 +125,10 @@ const
     '"lastModifiedDateTime":"2026-10-14T10:15:30Z","parentReference":{"id":"parent-1","driveId":"d1"},' +
     '"file":{"mimeType":"text/markdown"},"@microsoft.graph.downloadUrl":"https://files.example/%s"}';
   FolderFormat = '{"id":"%s","name":"%s","eTag":"e-%s","folder":{"childCount":1},"parentReference":{"id":"root-1"}}';
+  ShortcutJson = '{"id":"s1","name":"Gedeeld","eTag":"e-s1","parentReference":{"id":"root-1","driveId":"mine"},' +
+    '"remoteItem":{"id":"r1","parentReference":{"driveId":"owner"},"folder":{"childCount":3}}}';
+  RemoteFileJson = '{"id":"s2","name":"Los.md","eTag":"e-s2","parentReference":{"id":"root-1","driveId":"mine"},' +
+    '"remoteItem":{"id":"r2","parentReference":{"driveId":"owner"},"file":{"mimeType":"text/markdown"}}}';
   ErrorBody = '{"error":{"code":"someCode","message":"Something went wrong"}}';
 
 class function TGraphDriveClientTests.FileJson(const Id, Name, ETag: string): string;
@@ -172,6 +186,61 @@ begin
 
   Assert.AreEqual(MyDriveUrl + '/root', FFake.LastRequest.Url);
   Assert.AreEqual(Ord(TGraphDriveItemKind.FolderItem), Ord(Item.Kind));
+end;
+
+procedure TGraphDriveClientTests.GetItem_ParentReference_MapsParentDriveId;
+begin
+  FFake.EnqueueResponse(200, FileJson('f1', 'Today.md', ETagValue));
+
+  const Item = FDrive.GetItem('Notes/Today.md');
+
+  Assert.AreEqual('d1', Item.ParentDriveId);
+  Assert.AreEqual('', Item.RemoteDriveId);
+  Assert.AreEqual('', Item.RemoteItemId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_FolderShortcut_MapsTargetAndKind;
+begin
+  FFake.EnqueueResponse(200, ShortcutJson);
+
+  const Item = FDrive.GetItem('Gedeeld');
+
+  Assert.AreEqual('mine', Item.ParentDriveId);
+  Assert.AreEqual('owner', Item.RemoteDriveId);
+  Assert.AreEqual('r1', Item.RemoteItemId);
+  Assert.AreEqual(Ord(TGraphDriveItemKind.FolderItem), Ord(Item.Kind));
+  Assert.IsTrue(Item.IsFolderShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteFile_IsNotAFolderShortcut;
+begin
+  FFake.EnqueueResponse(200, RemoteFileJson);
+
+  const Item = FDrive.GetItem('Los.md');
+
+  Assert.AreEqual('r2', Item.RemoteItemId);
+  Assert.AreEqual(Ord(TGraphDriveItemKind.FileItem), Ord(Item.Kind));
+  Assert.IsFalse(Item.IsFolderShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_PlainFolder_IsNoShortcut;
+begin
+  FFake.EnqueueResponse(200, FolderJson('d1', 'Notes'));
+
+  const Item = FDrive.GetItem('Notes');
+
+  Assert.IsFalse(Item.IsFolderShortcut);
+  Assert.AreEqual('', Item.ParentDriveId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_FolderShortcut_KeepsTheRawJson;
+begin
+  FFake.EnqueueResponse(200, ShortcutJson);
+
+  const Item = FDrive.GetItem('Gedeeld');
+
+  Assert.IsTrue(Item.Raw.Contains('"remoteItem"'));
+  Assert.IsTrue(Item.Raw.Contains('"childCount":3'));
 end;
 
 procedure TGraphDriveClientTests.ForDrive_UsesTheDrivesSegment;

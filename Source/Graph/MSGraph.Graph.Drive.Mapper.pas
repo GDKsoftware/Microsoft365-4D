@@ -20,6 +20,8 @@ type
       KeySize = 'size';
       KeyLastModified = 'lastModifiedDateTime';
       KeyParentReference = 'parentReference';
+      KeyDriveId = 'driveId';
+      KeyRemoteItem = 'remoteItem';
       KeyFile = 'file';
       KeyFolder = 'folder';
       KeyDeleted = 'deleted';
@@ -31,7 +33,8 @@ type
 
     class function ParseObject(const Json: string): TJSONObject; static;
     class function KeyString(const Obj: TJSONObject; const Key: string): string; static;
-    class function KindOf(const Obj: TJSONObject): TGraphDriveItemKind; static;
+    class function KindOf(const Obj, RemoteItem: TJSONObject): TGraphDriveItemKind; static;
+    class function HasFacet(const Obj: TJSONObject; const Key: string): Boolean; static;
     class function RetryAfterSeconds(const HeaderValue: string): Integer; static;
     class procedure ReadError(const Body: string; out ErrorCode, ErrorMessage: string); static;
   public
@@ -56,9 +59,11 @@ const
 class function TGraphDriveMapper.ItemFromObject(const Obj: TJSONObject): TGraphDriveItem;
 begin
   Result := Default(TGraphDriveItem);
+
+  const RemoteItem = TGraphJson.GetObject(Obj, KeyRemoteItem);
   Result.Id           := TGraphJson.GetString(Obj, KeyId);
   Result.Name         := TGraphJson.GetString(Obj, KeyName);
-  Result.Kind         := KindOf(Obj);
+  Result.Kind         := KindOf(Obj, RemoteItem);
   Result.ETag         := TGraphJson.GetString(Obj, KeyETag);
   Result.CTag         := TGraphJson.GetString(Obj, KeyCTag);
   Result.Size         := TGraphJson.GetInt64(Obj, KeySize);
@@ -68,7 +73,13 @@ begin
   Result.Raw          := Obj.ToJSON;
 
   const Parent = TGraphJson.GetObject(Obj, KeyParentReference);
-  Result.ParentId := TGraphJson.GetString(Parent, KeyId);
+  Result.ParentId      := TGraphJson.GetString(Parent, KeyId);
+  Result.ParentDriveId := TGraphJson.GetString(Parent, KeyDriveId);
+
+  const RemoteParent = TGraphJson.GetObject(RemoteItem, KeyParentReference);
+  Result.RemoteDriveId  := TGraphJson.GetString(RemoteParent, KeyDriveId);
+  Result.RemoteItemId   := TGraphJson.GetString(RemoteItem, KeyId);
+  Result.RemoteIsFolder := HasFacet(RemoteItem, KeyFolder);
 end;
 
 class function TGraphDriveMapper.ItemFromJson(const Json: string): TGraphDriveItem;
@@ -156,13 +167,18 @@ begin
     Result := '';
 end;
 
-class function TGraphDriveMapper.KindOf(const Obj: TJSONObject): TGraphDriveItemKind;
+class function TGraphDriveMapper.HasFacet(const Obj: TJSONObject; const Key: string): Boolean;
 begin
-  const IsFolder = Assigned(Obj.GetValue(KeyFolder));
+  Result := Assigned(Obj) and Assigned(Obj.GetValue(Key));
+end;
+
+class function TGraphDriveMapper.KindOf(const Obj, RemoteItem: TJSONObject): TGraphDriveItemKind;
+begin
+  const IsFolder = HasFacet(Obj, KeyFolder) or HasFacet(RemoteItem, KeyFolder);
   if IsFolder then
     Exit(TGraphDriveItemKind.FolderItem);
 
-  const IsFile = Assigned(Obj.GetValue(KeyFile));
+  const IsFile = HasFacet(Obj, KeyFile) or HasFacet(RemoteItem, KeyFile);
   if IsFile then
     Exit(TGraphDriveItemKind.FileItem);
 
