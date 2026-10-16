@@ -37,6 +37,12 @@ type
     [Test]
     procedure GetItem_FolderShortcut_KeepsTheRawJson;
     [Test]
+    procedure GetItem_RemoteItemWithoutParentReference_LeavesRemoteDriveIdEmpty;
+    [Test]
+    procedure GetItem_RemoteFolderWithoutId_IsNoShortcut;
+    [Test]
+    procedure GetItem_OwnFacetAndRemoteFacet_OwnFacetWins;
+    [Test]
     procedure ForDrive_UsesTheDrivesSegment;
     [Test]
     procedure ForMyDrive_UrlsStayRootRelative;
@@ -129,6 +135,9 @@ const
     '"remoteItem":{"id":"r1","parentReference":{"driveId":"owner"},"folder":{"childCount":3}}}';
   RemoteFileJson = '{"id":"s2","name":"Los.md","eTag":"e-s2","parentReference":{"id":"root-1","driveId":"mine"},' +
     '"remoteItem":{"id":"r2","parentReference":{"driveId":"owner"},"file":{"mimeType":"text/markdown"}}}';
+  RemoteWithoutParentJson = '{"id":"s3","name":"Gedeeld","eTag":"e-s3","remoteItem":{"id":"r3","folder":{}}}';
+  RemoteFolderWithoutIdJson = '{"id":"s4","name":"Gedeeld","eTag":"e-s4","remoteItem":{"parentReference":{"driveId":"owner"},"folder":{}}}';
+  OwnFileWithRemoteFolderJson = '{"id":"s5","name":"Los.md","eTag":"e-s5","file":{},"remoteItem":{"id":"r5","folder":{}}}';
   ErrorBody = '{"error":{"code":"someCode","message":"Something went wrong"}}';
 
 class function TGraphDriveClientTests.FileJson(const Id, Name, ETag: string): string;
@@ -239,8 +248,39 @@ begin
 
   const Item = FDrive.GetItem('Gedeeld');
 
-  Assert.IsTrue(Item.Raw.Contains('"remoteItem"'));
-  Assert.IsTrue(Item.Raw.Contains('"childCount":3'));
+  const HasRemoteItem = Item.Raw.Contains('"remoteItem"');
+  const HasChildCount = Item.Raw.Contains('"childCount":3');
+  Assert.IsTrue(HasRemoteItem);
+  Assert.IsTrue(HasChildCount);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteItemWithoutParentReference_LeavesRemoteDriveIdEmpty;
+begin
+  FFake.EnqueueResponse(200, RemoteWithoutParentJson);
+
+  const Item = FDrive.GetItem('Gedeeld');
+
+  Assert.AreEqual('', Item.RemoteDriveId);
+  Assert.AreEqual('r3', Item.RemoteItemId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteFolderWithoutId_IsNoShortcut;
+begin
+  FFake.EnqueueResponse(200, RemoteFolderWithoutIdJson);
+
+  const Item = FDrive.GetItem('Gedeeld');
+
+  Assert.AreEqual('owner', Item.RemoteDriveId);
+  Assert.IsFalse(Item.IsFolderShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_OwnFacetAndRemoteFacet_OwnFacetWins;
+begin
+  FFake.EnqueueResponse(200, OwnFileWithRemoteFolderJson);
+
+  const Item = FDrive.GetItem('Los.md');
+
+  Assert.AreEqual(Ord(TGraphDriveItemKind.FileItem), Ord(Item.Kind));
 end;
 
 procedure TGraphDriveClientTests.ForDrive_UsesTheDrivesSegment;

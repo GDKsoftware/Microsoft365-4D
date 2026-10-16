@@ -60,7 +60,10 @@ class function TGraphDriveMapper.ItemFromObject(const Obj: TJSONObject): TGraphD
 begin
   Result := Default(TGraphDriveItem);
 
+  const Parent = TGraphJson.GetObject(Obj, KeyParentReference);
   const RemoteItem = TGraphJson.GetObject(Obj, KeyRemoteItem);
+  const RemoteParent = TGraphJson.GetObject(RemoteItem, KeyParentReference);
+
   Result.Id           := TGraphJson.GetString(Obj, KeyId);
   Result.Name         := TGraphJson.GetString(Obj, KeyName);
   Result.Kind         := KindOf(Obj, RemoteItem);
@@ -72,11 +75,9 @@ begin
   Result.DownloadUrl  := KeyString(Obj, KeyDownloadUrl);
   Result.Raw          := Obj.ToJSON;
 
-  const Parent = TGraphJson.GetObject(Obj, KeyParentReference);
   Result.ParentId      := TGraphJson.GetString(Parent, KeyId);
   Result.ParentDriveId := TGraphJson.GetString(Parent, KeyDriveId);
 
-  const RemoteParent = TGraphJson.GetObject(RemoteItem, KeyParentReference);
   Result.RemoteDriveId  := TGraphJson.GetString(RemoteParent, KeyDriveId);
   Result.RemoteItemId   := TGraphJson.GetString(RemoteItem, KeyId);
   Result.RemoteIsFolder := HasFacet(RemoteItem, KeyFolder);
@@ -174,12 +175,16 @@ end;
 
 class function TGraphDriveMapper.KindOf(const Obj, RemoteItem: TJSONObject): TGraphDriveItemKind;
 begin
-  const IsFolder = HasFacet(Obj, KeyFolder) or HasFacet(RemoteItem, KeyFolder);
-  if IsFolder then
+  if HasFacet(Obj, KeyFolder) then
     Exit(TGraphDriveItemKind.FolderItem);
 
-  const IsFile = HasFacet(Obj, KeyFile) or HasFacet(RemoteItem, KeyFile);
-  if IsFile then
+  if HasFacet(Obj, KeyFile) then
+    Exit(TGraphDriveItemKind.FileItem);
+
+  if HasFacet(RemoteItem, KeyFolder) then
+    Exit(TGraphDriveItemKind.FolderItem);
+
+  if HasFacet(RemoteItem, KeyFile) then
     Exit(TGraphDriveItemKind.FileItem);
 
   Result := TGraphDriveItemKind.Unknown;

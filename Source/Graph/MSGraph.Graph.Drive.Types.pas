@@ -60,6 +60,10 @@ type
     DownloadUrl: string;
     Raw: string;
 
+    /// <summary>
+    /// True when the item is a shortcut to a folder in another drive: the
+    /// target id (<c>RemoteItemId</c>) is known and the target is a folder.
+    /// </summary>
     function IsFolderShortcut: Boolean;
   end;
 
