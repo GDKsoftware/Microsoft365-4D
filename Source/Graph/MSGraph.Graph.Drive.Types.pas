@@ -3,9 +3,11 @@ unit MSGraph.Graph.Drive.Types;
 interface
 
 const
-  GraphDriveDefaultBaseUrl   = 'https://graph.microsoft.com/v1.0';
-  GraphMyDrivePath           = '/me/drive';
-  GraphDrivePathFormat       = '/drives/%s';
+  GraphDriveDefaultBaseUrl    = 'https://graph.microsoft.com/v1.0';
+  GraphMyDrivePath            = '/me/drive';
+  GraphDrivePathFormat        = '/drives/%s';
+  GraphDriveRootAddress       = '/root';
+  GraphDriveItemAddressFormat = '/items/%s';
 
 type
   {$SCOPEDENUMS ON}
@@ -16,15 +18,20 @@ type
   /// <summary>
   /// Where a drive client points: the base URL of Microsoft Graph and the drive
   /// segment (<c>/me/drive</c> for the signed-in user's OneDrive, or
-  /// <c>/drives/{drive-id}</c> for a SharePoint document library).
+  /// <c>/drives/{drive-id}</c> for a SharePoint document library). The root
+  /// address is the item that paths are relative to: <c>/root</c>, or
+  /// <c>/items/{id}</c> for a folder in someone else's drive, such as a shared
+  /// folder.
   /// </summary>
   TGraphDriveConfig = record
     AccessToken: string;
     BaseUrl: string;
     DrivePath: string;
+    RootAddress: string;
 
     class function ForMyDrive(const AccessToken: string): TGraphDriveConfig; static;
     class function ForDrive(const AccessToken, DriveId: string): TGraphDriveConfig; static;
+    class function ForFolder(const AccessToken, DriveId, FolderId: string): TGraphDriveConfig; static;
   end;
 
   /// <summary>
@@ -72,13 +79,20 @@ type
 implementation
 
 uses
-  System.SysUtils;
+  System.SysUtils,
+  MSGraph.Graph.Drive.Exceptions,
+  MSGraph.Graph.Drive.Path;
+
+const
+  SMissingDriveId = 'A folder address needs the id of the drive';
+  SMissingFolderId = 'A folder address needs the id of the folder';
 
 class function TGraphDriveConfig.ForMyDrive(const AccessToken: string): TGraphDriveConfig;
 begin
   Result.AccessToken := AccessToken;
   Result.BaseUrl     := GraphDriveDefaultBaseUrl;
   Result.DrivePath   := GraphMyDrivePath;
+  Result.RootAddress := GraphDriveRootAddress;
 end;
 
 class function TGraphDriveConfig.ForDrive(const AccessToken, DriveId: string): TGraphDriveConfig;
@@ -86,6 +100,23 @@ begin
   Result.AccessToken := AccessToken;
   Result.BaseUrl     := GraphDriveDefaultBaseUrl;
   Result.DrivePath   := Format(GraphDrivePathFormat, [DriveId]);
+  Result.RootAddress := GraphDriveRootAddress;
+end;
+
+class function TGraphDriveConfig.ForFolder(const AccessToken, DriveId, FolderId: string): TGraphDriveConfig;
+begin
+  if DriveId.Trim.IsEmpty then
+    raise EGraphDriveValidationError.Create(0, '', SMissingDriveId);
+
+  if FolderId.Trim.IsEmpty then
+    raise EGraphDriveValidationError.Create(0, '', SMissingFolderId);
+
+  const EncodedFolderId = TGraphDrivePath.EncodeSegment(FolderId);
+
+  Result.AccessToken := AccessToken;
+  Result.BaseUrl     := GraphDriveDefaultBaseUrl;
+  Result.DrivePath   := Format(GraphDrivePathFormat, [DriveId]);
+  Result.RootAddress := Format(GraphDriveItemAddressFormat, [EncodedFolderId]);
 end;
 
 function TGraphDrivePage.HasMore: Boolean;

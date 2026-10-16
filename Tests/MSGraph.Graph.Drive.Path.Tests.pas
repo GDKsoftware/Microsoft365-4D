@@ -25,6 +25,19 @@ type
     procedure ItemAddress_UsesPathAddressing(const Path, Expected: string);
 
     [Test]
+    procedure ItemAddress_PathUnderFolder_AddressesRelativeToTheFolderItem;
+    [Test]
+    procedure ItemAddress_EmptyPathUnderFolder_IsTheFolderItself;
+    [Test]
+    procedure ChildrenAddress_UnderFolder_AddressesRelativeToTheFolderItem;
+    [Test]
+    procedure ChildrenAddress_EmptyPathUnderFolder_ListsTheFolderChildren;
+    [Test]
+    procedure ContentAddress_UnderFolder_AddressesRelativeToTheFolderItem;
+    [Test]
+    procedure ItemAddress_SpecialCharactersUnderFolder_EncodesEachSegment;
+
+    [Test]
     [TestCase('Root', '|/root/children', '|')]
     [TestCase('Folder', 'Notes|/root:/Notes:/children', '|')]
     procedure ChildrenAddress_UsesPathAddressing(const Path, Expected: string);
@@ -42,8 +55,12 @@ type
 implementation
 
 uses
+  MSGraph.Graph.Drive.Types,
   MSGraph.Graph.Drive.Path,
   MSGraph.Graph.Drive.Exceptions;
+
+const
+  FolderAddress = '/items/ABC';
 
 procedure TGraphDrivePathTests.Encode_PercentEncodesEachSegment(const Path, Expected: string);
 begin
@@ -63,16 +80,60 @@ end;
 
 procedure TGraphDrivePathTests.ItemAddress_UsesPathAddressing(const Path, Expected: string);
 begin
-  const Address = TGraphDrivePath.ItemAddress(Path);
+  const Address = TGraphDrivePath.ItemAddress(GraphDriveRootAddress, Path);
 
   Assert.AreEqual(Expected, Address);
 end;
 
 procedure TGraphDrivePathTests.ChildrenAddress_UsesPathAddressing(const Path, Expected: string);
 begin
-  const Address = TGraphDrivePath.ChildrenAddress(Path);
+  const Address = TGraphDrivePath.ChildrenAddress(GraphDriveRootAddress, Path);
 
   Assert.AreEqual(Expected, Address);
+end;
+
+procedure TGraphDrivePathTests.ItemAddress_PathUnderFolder_AddressesRelativeToTheFolderItem;
+begin
+  const Address = TGraphDrivePath.ItemAddress(FolderAddress, 'Notes/a.md');
+
+  Assert.AreEqual('/items/ABC:/Notes/a.md:', Address);
+end;
+
+procedure TGraphDrivePathTests.ItemAddress_EmptyPathUnderFolder_IsTheFolderItself;
+begin
+  const Address = TGraphDrivePath.ItemAddress(FolderAddress, '');
+
+  Assert.AreEqual(FolderAddress, Address);
+end;
+
+procedure TGraphDrivePathTests.ChildrenAddress_UnderFolder_AddressesRelativeToTheFolderItem;
+begin
+  const Address = TGraphDrivePath.ChildrenAddress(FolderAddress, 'Notes');
+
+  Assert.AreEqual('/items/ABC:/Notes:/children', Address);
+end;
+
+procedure TGraphDrivePathTests.ChildrenAddress_EmptyPathUnderFolder_ListsTheFolderChildren;
+begin
+  const Address = TGraphDrivePath.ChildrenAddress(FolderAddress, '');
+
+  Assert.AreEqual('/items/ABC/children', Address);
+end;
+
+procedure TGraphDrivePathTests.ContentAddress_UnderFolder_AddressesRelativeToTheFolderItem;
+begin
+  const Address = TGraphDrivePath.ContentAddress(FolderAddress, 'Notes/a.md');
+
+  Assert.AreEqual('/items/ABC:/Notes/a.md:/content', Address);
+end;
+
+procedure TGraphDrivePathTests.ItemAddress_SpecialCharactersUnderFolder_EncodesEachSegment;
+begin
+  const Path: string = 'Idee #1 ' + Char($E9) + '.md';
+
+  const Address = TGraphDrivePath.ItemAddress(FolderAddress, Path);
+
+  Assert.AreEqual('/items/ABC:/Idee%20%231%20%C3%A9.md:', Address);
 end;
 
 procedure TGraphDrivePathTests.ContentAddress_EmptyPath_RaisesValidationError;
@@ -80,7 +141,7 @@ begin
   Assert.WillRaise(
     procedure
     begin
-      TGraphDrivePath.ContentAddress('');
+      TGraphDrivePath.ContentAddress(GraphDriveRootAddress, '');
     end,
     EGraphDriveValidationError);
 end;

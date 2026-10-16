@@ -29,6 +29,14 @@ type
     [Test]
     procedure ForDrive_UsesTheDrivesSegment;
     [Test]
+    procedure ForMyDrive_UrlsStayRootRelative;
+    [Test]
+    procedure ForFolder_BuildsItemUrls;
+    [Test]
+    procedure ForFolder_Delta_UsesTheFolder;
+    [Test]
+    procedure ForFolder_EmptyIds_RaisesValidationError;
+    [Test]
     procedure ListChildren_Folder_MapsItemsAndNextLink;
     [Test]
     procedure ListNext_GraphLink_FollowsTheLink;
@@ -90,6 +98,7 @@ uses
 const
   Token = 'drive-test-token';
   MyDriveUrl = 'https://graph.microsoft.com/v1.0/me/drive';
+  FolderUrl = 'https://graph.microsoft.com/v1.0/drives/D1/items/F1';
   ETagValue = '"{1A2B},3"';
   FileFormat = '{"id":"%s","name":"%s","eTag":"%s","cTag":"c-%s","size":12,' +
     '"lastModifiedDateTime":"2026-10-14T10:15:30Z","parentReference":{"id":"parent-1","driveId":"d1"},' +
@@ -162,6 +171,75 @@ begin
   Drive.GetItem('');
 
   Assert.AreEqual('https://graph.microsoft.com/v1.0/drives/b!lib-42/root', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.ForMyDrive_UrlsStayRootRelative;
+begin
+  FFake.EnqueueResponse(200, FolderJson('d1', 'Notes'));
+  FFake.EnqueueResponse(200, '{"value":[]}');
+  FFake.EnqueueResponse(201, FileJson('f1', 'a.md', ETagValue));
+  FFake.EnqueueResponse(201, FolderJson('d2', 'New'));
+  FFake.EnqueueResponse(204, '');
+
+  FDrive.GetItem('Notes');
+  Assert.AreEqual(MyDriveUrl + '/root:/Notes:', FFake.LastRequest.Url);
+  FDrive.ListChildren('Notes');
+  Assert.AreEqual(MyDriveUrl + '/root:/Notes:/children', FFake.LastRequest.Url);
+  FDrive.Upload(TGraphDriveUploadRequest.ForPath('Notes/a.md', TGraphDriveWriteMode.Replace), TEncoding.UTF8.GetBytes('x'));
+  Assert.AreEqual(MyDriveUrl + '/root:/Notes/a.md:/content?@microsoft.graph.conflictBehavior=replace', FFake.LastRequest.Url);
+  FDrive.CreateFolder('Notes', 'New');
+  Assert.AreEqual(MyDriveUrl + '/root:/Notes:/children', FFake.LastRequest.Url);
+  FDrive.Delete('Notes/a.md');
+  Assert.AreEqual(MyDriveUrl + '/root:/Notes/a.md:', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_BuildsItemUrls;
+begin
+  const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForFolder(Token, 'D1', 'F1'), FFake);
+  FFake.EnqueueResponse(200, FolderJson('d1', 'Notes'));
+  FFake.EnqueueResponse(200, '{"value":[]}');
+  FFake.EnqueueResponse(201, FileJson('f1', 'a.md', ETagValue));
+  FFake.EnqueueResponse(201, FolderJson('d2', 'New'));
+  FFake.EnqueueResponse(204, '');
+
+  Drive.GetItem('Notes');
+  Assert.AreEqual(FolderUrl + ':/Notes:', FFake.LastRequest.Url);
+  Drive.ListChildren('');
+  Assert.AreEqual(FolderUrl + '/children', FFake.LastRequest.Url);
+  Drive.Upload(TGraphDriveUploadRequest.ForPath('Notes/a.md', TGraphDriveWriteMode.Replace), TEncoding.UTF8.GetBytes('x'));
+  Assert.AreEqual(FolderUrl + ':/Notes/a.md:/content?@microsoft.graph.conflictBehavior=replace', FFake.LastRequest.Url);
+  Drive.CreateFolder('Notes', 'New');
+  Assert.AreEqual(FolderUrl + ':/Notes:/children', FFake.LastRequest.Url);
+  Drive.Delete('Notes/a.md');
+  Assert.AreEqual(FolderUrl + ':/Notes/a.md:', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_Delta_UsesTheFolder;
+begin
+  const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForFolder(Token, 'D1', 'F1'), FFake);
+  FFake.EnqueueResponse(200, '{"value":[],"@odata.deltaLink":"' + FolderUrl + '/delta?token=t1"}');
+  FFake.EnqueueResponse(200, '{"value":[],"@odata.deltaLink":"' + FolderUrl + '/delta?token=t2"}');
+
+  Drive.Delta('');
+  Assert.AreEqual(FolderUrl + '/delta', FFake.LastRequest.Url);
+  Drive.LatestDeltaLink;
+  Assert.AreEqual(FolderUrl + '/delta?token=latest', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_EmptyIds_RaisesValidationError;
+begin
+  Assert.WillRaise(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, '', 'F1');
+    end,
+    EGraphDriveValidationError);
+  Assert.WillRaise(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, 'D1', '');
+    end,
+    EGraphDriveValidationError);
 end;
 
 procedure TGraphDriveClientTests.ListChildren_Folder_MapsItemsAndNextLink;
