@@ -29,8 +29,9 @@ type
       BearerFormat = 'Bearer %s';
       ContentTypeJson = 'application/json';
       ContentTypeOctetStream = 'application/octet-stream';
-      DeltaSuffix = '/root/delta';
-      LatestDeltaSuffix = '/root/delta?token=latest';
+      DeltaSuffix = '/delta';
+      LatestDeltaSuffix = '/delta?token=latest';
+      AddressFormat = '%s%s';
       ConflictBehaviorReplace = '?@microsoft.graph.conflictBehavior=replace';
       ConflictBehaviorFail = '?@microsoft.graph.conflictBehavior=fail';
       KeyName = 'name';
@@ -40,6 +41,7 @@ type
       KeyParentReference = 'parentReference';
       KeyId = 'id';
 
+    function RootAddress: string;
     function DriveUrl(const Suffix: string): string;
     function AuthorizationHeader: TNetHeader;
     function JsonHeaders: TArray<TNetHeader>;
@@ -106,13 +108,15 @@ end;
 
 function TGraphDriveClient.GetItem(const Path: string): TGraphDriveItem;
 begin
-  const Url = DriveUrl(TGraphDrivePath.ItemAddress(Path));
+  const Address = TGraphDrivePath.ItemAddress(RootAddress, Path);
+  const Url = DriveUrl(Address);
   Result := TGraphDriveMapper.ItemFromJson(GetJson(Url));
 end;
 
 function TGraphDriveClient.ListChildren(const Path: string): TGraphDrivePage;
 begin
-  const Url = DriveUrl(TGraphDrivePath.ChildrenAddress(Path));
+  const Address = TGraphDrivePath.ChildrenAddress(RootAddress, Path);
+  const Url = DriveUrl(Address);
   Result := TGraphDriveMapper.PageFromJson(GetJson(Url));
 end;
 
@@ -145,7 +149,8 @@ end;
 
 function TGraphDriveClient.CreateFolder(const ParentPath, Name: string): TGraphDriveItem;
 begin
-  const Url = DriveUrl(TGraphDrivePath.ChildrenAddress(ParentPath));
+  const Address = TGraphDrivePath.ChildrenAddress(RootAddress, ParentPath);
+  const Url = DriveUrl(Address);
   var HttpRequest := NewRequest(MethodPost, Url, JsonHeaders);
   HttpRequest.Body := FolderBody(Name);
 
@@ -156,7 +161,8 @@ end;
 
 function TGraphDriveClient.Move(const Path, NewParentId, NewName: string): TGraphDriveItem;
 begin
-  const Url = DriveUrl(TGraphDrivePath.ItemAddress(Path));
+  const Address = TGraphDrivePath.ItemAddress(RootAddress, Path);
+  const Url = DriveUrl(Address);
   var HttpRequest := NewRequest(MethodPatch, Url, JsonHeaders);
   HttpRequest.Body := MoveBody(NewParentId, NewName);
 
@@ -167,7 +173,8 @@ end;
 
 procedure TGraphDriveClient.Delete(const Path: string);
 begin
-  const Url = DriveUrl(TGraphDrivePath.ItemAddress(Path));
+  const Address = TGraphDrivePath.ItemAddress(RootAddress, Path);
+  const Url = DriveUrl(Address);
   const Response = Send(NewRequest(MethodDelete, Url, [AuthorizationHeader]));
   GuardSuccess(Response);
 end;
@@ -175,7 +182,14 @@ end;
 function TGraphDriveClient.Delta(const Link: string): TGraphDrivePage;
 begin
   if Link.IsEmpty then
-    Exit(TGraphDriveMapper.PageFromJson(GetJson(DriveUrl(DeltaSuffix))));
+  begin
+    const Root = RootAddress;
+    const DeltaAddress = Format(AddressFormat, [Root, DeltaSuffix]);
+    const Url = DriveUrl(DeltaAddress);
+    const Json = GetJson(Url);
+    Result := TGraphDriveMapper.PageFromJson(Json);
+    Exit;
+  end;
 
   GuardGraphLink(Link);
   Result := TGraphDriveMapper.PageFromJson(GetJson(Link));
@@ -183,10 +197,21 @@ end;
 
 function TGraphDriveClient.LatestDeltaLink: string;
 begin
-  const Page = TGraphDriveMapper.PageFromJson(GetJson(DriveUrl(LatestDeltaSuffix)));
+  const Root = RootAddress;
+  const LatestAddress = Format(AddressFormat, [Root, LatestDeltaSuffix]);
+  const Url = DriveUrl(LatestAddress);
+  const Json = GetJson(Url);
+  const Page = TGraphDriveMapper.PageFromJson(Json);
   Result := Page.DeltaLink;
   if Result.IsEmpty then
     raise EGraphDriveMappingError.Create(0, '', SMissingDeltaLink);
+end;
+
+function TGraphDriveClient.RootAddress: string;
+begin
+  Result := FConfig.RootAddress;
+  if Result.IsEmpty then
+    Result := GraphDriveRootAddress;
 end;
 
 function TGraphDriveClient.DriveUrl(const Suffix: string): string;
@@ -220,7 +245,8 @@ end;
 
 function TGraphDriveClient.UploadUrl(const Request: TGraphDriveUploadRequest): string;
 begin
-  const Url = DriveUrl(TGraphDrivePath.ContentAddress(Request.Path));
+  const Address = TGraphDrivePath.ContentAddress(RootAddress, Request.Path);
+  const Url = DriveUrl(Address);
 
   case Request.Mode of
     TGraphDriveWriteMode.Replace      : Result := Url + ConflictBehaviorReplace;

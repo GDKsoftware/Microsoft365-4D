@@ -15,21 +15,20 @@ type
       Separator = '/';
       ParentSegment = '..';
       CurrentSegment = '.';
-      RootAddress = '/root';
-      PathAddressFormat = '/root:/%s:';
+      PathAddressFormat = '%s:/%s:';
       ChildrenSuffix = '/children';
-      PathChildrenFormat = '/root:/%s:/children';
-      ContentFormat = '/root:/%s:/content';
+      PathChildrenFormat = '%s:/%s:/children';
+      ContentFormat = '%s:/%s:/content';
       PercentFormat = '%%%.2X';
 
-    class function EncodeSegment(const Segment: string): string; static;
     class function IsUnreserved(const Value: Byte): Boolean; static;
   public
     class function Normalize(const Path: string): string; static;
     class function Encode(const Path: string): string; static;
-    class function ItemAddress(const Path: string): string; static;
-    class function ChildrenAddress(const Path: string): string; static;
-    class function ContentAddress(const Path: string): string; static;
+    class function EncodeSegment(const Segment: string): string; static;
+    class function ItemAddress(const RootAddress, Path: string): string; static;
+    class function ChildrenAddress(const RootAddress, Path: string): string; static;
+    class function ContentAddress(const RootAddress, Path: string): string; static;
   end;
 
 implementation
@@ -74,31 +73,31 @@ begin
   Result := string.Join(Separator, Encoded);
 end;
 
-class function TGraphDrivePath.ItemAddress(const Path: string): string;
+class function TGraphDrivePath.ItemAddress(const RootAddress, Path: string): string;
 begin
   const Encoded = Encode(Path);
   if Encoded.IsEmpty then
     Result := RootAddress
   else
-    Result := Format(PathAddressFormat, [Encoded]);
+    Result := Format(PathAddressFormat, [RootAddress, Encoded]);
 end;
 
-class function TGraphDrivePath.ChildrenAddress(const Path: string): string;
+class function TGraphDrivePath.ChildrenAddress(const RootAddress, Path: string): string;
 begin
   const Encoded = Encode(Path);
   if Encoded.IsEmpty then
     Result := RootAddress + ChildrenSuffix
   else
-    Result := Format(PathChildrenFormat, [Encoded]);
+    Result := Format(PathChildrenFormat, [RootAddress, Encoded]);
 end;
 
-class function TGraphDrivePath.ContentAddress(const Path: string): string;
+class function TGraphDrivePath.ContentAddress(const RootAddress, Path: string): string;
 begin
   const Encoded = Encode(Path);
   if Encoded.IsEmpty then
     raise EGraphDriveValidationError.Create(0, '', SEmptyContentPath);
 
-  Result := Format(ContentFormat, [Encoded]);
+  Result := Format(ContentFormat, [RootAddress, Encoded]);
 end;
 
 class function TGraphDrivePath.EncodeSegment(const Segment: string): string;

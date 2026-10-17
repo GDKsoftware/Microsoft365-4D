@@ -16,6 +16,11 @@ type
 
     class function FileJson(const Id, Name, ETag: string): string; static;
     class function FolderJson(const Id, Name: string): string; static;
+
+    function FolderDrive(const ItemId: string): IGraphDriveClient;
+    procedure EnqueueItemCalls;
+    procedure UploadNote(const Drive: IGraphDriveClient);
+    function LastUrl: string;
   public
     [Setup]
     procedure Setup;
@@ -27,7 +32,41 @@ type
     [Test]
     procedure GetItem_EmptyPath_RequestsTheRoot;
     [Test]
+    procedure GetItem_ParentReference_MapsParentDriveId;
+    [Test]
+    procedure GetItem_FolderShortcut_MapsTargetAndKind;
+    [Test]
+    procedure GetItem_RemoteFile_IsNotAFolderShortcut;
+    [Test]
+    procedure GetItem_PlainFolder_IsNoShortcut;
+    [Test]
+    procedure GetItem_FolderShortcut_KeepsTheRawJson;
+    [Test]
+    procedure GetItem_RemoteItemWithoutParentReference_LeavesRemoteDriveIdEmpty;
+    [Test]
+    procedure GetItem_RemoteFolderWithoutId_IsNoShortcut;
+    [Test]
+    procedure GetItem_OwnFacetAndRemoteFacet_OwnFacetWins;
+    [Test]
     procedure ForDrive_UsesTheDrivesSegment;
+    [Test]
+    procedure ForMyDrive_UrlsStayRootRelative;
+    [Test]
+    procedure ForFolder_BuildsItemUrls;
+    [Test]
+    procedure ForFolder_Delta_UsesTheFolder;
+    [Test]
+    procedure ForFolder_EmptyDriveId_RaisesValidationError;
+    [Test]
+    procedure ForFolder_EmptyFolderId_RaisesValidationError;
+    [Test]
+    [TestCase('Current', '.')]
+    [TestCase('Parent', '..')]
+    procedure ForFolder_DotFolderId_RaisesValidationError(const FolderId: string);
+    [Test]
+    procedure ForFolder_FolderIdWithSpecialCharacters_EncodesItAsOneSegment;
+    [Test]
+    procedure EmptyRootAddress_FallsBackToTheDriveRoot;
     [Test]
     procedure ListChildren_Folder_MapsItemsAndNextLink;
     [Test]
@@ -88,14 +127,56 @@ uses
   MSGraph.Graph.Drive;
 
 const
-  Token = 'drive-test-token';
-  MyDriveUrl = 'https://graph.microsoft.com/v1.0/me/drive';
-  ETagValue = '"{1A2B},3"';
-  FileFormat = '{"id":"%s","name":"%s","eTag":"%s","cTag":"c-%s","size":12,' +
-    '"lastModifiedDateTime":"2026-10-14T10:15:30Z","parentReference":{"id":"parent-1","driveId":"d1"},' +
-    '"file":{"mimeType":"text/markdown"},"@microsoft.graph.downloadUrl":"https://files.example/%s"}';
-  FolderFormat = '{"id":"%s","name":"%s","eTag":"e-%s","folder":{"childCount":1},"parentReference":{"id":"root-1"}}';
-  ErrorBody = '{"error":{"code":"someCode","message":"Something went wrong"}}';
+  Token                       = 'drive-test-token';
+  MyDriveUrl                  = 'https://graph.microsoft.com/v1.0/me/drive';
+  DrivesUrl                   = 'https://graph.microsoft.com/v1.0/drives/D1';
+  FolderUrl                   = DrivesUrl + '/items/F1';
+  ETagValue                   = '"{1A2B},3"';
+  FileFormat                  = '{"id":"%s","name":"%s","eTag":"%s","cTag":"c-%s","size":12,' +
+                                '"lastModifiedDateTime":"2026-10-14T10:15:30Z","parentReference":{"id":"parent-1","driveId":"d1"},' +
+                                '"file":{"mimeType":"text/markdown"},"@microsoft.graph.downloadUrl":"https://files.example/%s"}';
+  FolderFormat                = '{"id":"%s","name":"%s","eTag":"e-%s","folder":{"childCount":1},"parentReference":{"id":"root-1"}}';
+  ShortcutJson                = '{"id":"s1","name":"Gedeeld","eTag":"e-s1","parentReference":{"id":"root-1","driveId":"mine"},' +
+                                '"remoteItem":{"id":"r1","parentReference":{"driveId":"owner"},"folder":{"childCount":3}}}';
+  RemoteFileJson              = '{"id":"s2","name":"Los.md","eTag":"e-s2","parentReference":{"id":"root-1","driveId":"mine"},' +
+                                '"remoteItem":{"id":"r2","parentReference":{"driveId":"owner"},"file":{"mimeType":"text/markdown"}}}';
+  RemoteWithoutParentJson     = '{"id":"s3","name":"Gedeeld","eTag":"e-s3","remoteItem":{"id":"r3","folder":{}}}';
+  RemoteFolderWithoutIdJson   = '{"id":"s4","name":"Gedeeld","eTag":"e-s4","remoteItem":{"parentReference":{"driveId":"owner"},"folder":{}}}';
+  OwnFileWithRemoteFolderJson = '{"id":"s5","name":"Los.md","eTag":"e-s5","file":{},"remoteItem":{"id":"r5","folder":{}}}';
+  ErrorBody                   = '{"error":{"code":"someCode","message":"Something went wrong"}}';
+  MyRootUrl                   = MyDriveUrl + '/root';
+  DriveId                     = 'D1';
+  FolderId                    = 'F1';
+  EncodedFolderItemUrl        = DrivesUrl + '/items/B7F0%2112%233%2Fx:/Notes:';
+  FileItemId                  = 'f1';
+  FileDriveId                 = 'd1';
+  NotesItemId                 = 'n1';
+  OwnDriveId                  = 'mine';
+  OwnerDriveId                = 'owner';
+  NotesFolder                 = 'Notes';
+  NewFolderName               = 'New';
+  TodayName                   = 'Today.md';
+  TodayPath                   = 'Notes/Today.md';
+  NoteName                    = 'a.md';
+  NotePath                    = 'Notes/a.md';
+  NoteContent                 = 'x';
+  SharedName                  = 'Gedeeld';
+  LooseFileName               = 'Los.md';
+  EmptyPage                   = '{"value":[]}';
+  NoValue                     = '';
+  FirstDeltaToken             = 't1';
+  RootItemId                  = 'root-1';
+  RootName                    = 'root';
+  AddressFormat               = '%s%s';
+  ItemUrlFormat               = '%s:/%s:';
+  ChildrenUrlFormat           = '%s:/%s:/children';
+  UploadUrlFormat             = '%s:/%s:/content?@microsoft.graph.conflictBehavior=replace';
+  DeltaPageFormat             = '{"value":[],"@odata.deltaLink":"%s/delta?token=%s"}';
+  ChildrenSuffix              = '/children';
+  DeltaSuffix                 = '/delta';
+  LatestDeltaSuffix           = '/delta?token=latest';
+  FolderKind                  = Ord(TGraphDriveItemKind.FolderItem);
+  FileKind                    = Ord(TGraphDriveItemKind.FileItem);
 
 class function TGraphDriveClientTests.FileJson(const Id, Name, ETag: string): string;
 begin
@@ -154,6 +235,102 @@ begin
   Assert.AreEqual(Ord(TGraphDriveItemKind.FolderItem), Ord(Item.Kind));
 end;
 
+procedure TGraphDriveClientTests.GetItem_ParentReference_MapsParentDriveId;
+begin
+  const Body = FileJson(FileItemId, TodayName, ETagValue);
+  FFake.EnqueueResponse(200, Body);
+
+  const Item = FDrive.GetItem(TodayPath);
+
+  Assert.AreEqual(FileDriveId, Item.ParentDriveId);
+  Assert.AreEqual(NoValue, Item.RemoteDriveId);
+  Assert.AreEqual(NoValue, Item.RemoteItemId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_FolderShortcut_MapsTargetAndKind;
+begin
+  FFake.EnqueueResponse(200, ShortcutJson);
+
+  const Item = FDrive.GetItem(SharedName);
+
+  const Kind = Ord(Item.Kind);
+  const IsShortcut = Item.IsFolderShortcut;
+  Assert.AreEqual(OwnDriveId, Item.ParentDriveId);
+  Assert.AreEqual(OwnerDriveId, Item.RemoteDriveId);
+  Assert.AreEqual('r1', Item.RemoteItemId);
+  Assert.AreEqual(FolderKind, Kind);
+  Assert.IsTrue(IsShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteFile_IsNotAFolderShortcut;
+begin
+  FFake.EnqueueResponse(200, RemoteFileJson);
+
+  const Item = FDrive.GetItem(LooseFileName);
+
+  const Kind = Ord(Item.Kind);
+  const IsShortcut = Item.IsFolderShortcut;
+  Assert.AreEqual('r2', Item.RemoteItemId);
+  Assert.AreEqual(FileKind, Kind);
+  Assert.IsFalse(IsShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_PlainFolder_IsNoShortcut;
+begin
+  const Body = FolderJson(NotesItemId, NotesFolder);
+  FFake.EnqueueResponse(200, Body);
+
+  const Item = FDrive.GetItem(NotesFolder);
+
+  const IsShortcut = Item.IsFolderShortcut;
+  Assert.IsFalse(IsShortcut);
+  Assert.AreEqual(NoValue, Item.ParentDriveId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_FolderShortcut_KeepsTheRawJson;
+begin
+  FFake.EnqueueResponse(200, ShortcutJson);
+
+  const Item = FDrive.GetItem(SharedName);
+
+  const Raw = Item.Raw;
+  const HasRemoteItem = Raw.Contains('"remoteItem"');
+  const HasChildCount = Raw.Contains('"childCount":3');
+  Assert.IsTrue(HasRemoteItem);
+  Assert.IsTrue(HasChildCount);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteItemWithoutParentReference_LeavesRemoteDriveIdEmpty;
+begin
+  FFake.EnqueueResponse(200, RemoteWithoutParentJson);
+
+  const Item = FDrive.GetItem(SharedName);
+
+  Assert.AreEqual(NoValue, Item.RemoteDriveId);
+  Assert.AreEqual('r3', Item.RemoteItemId);
+end;
+
+procedure TGraphDriveClientTests.GetItem_RemoteFolderWithoutId_IsNoShortcut;
+begin
+  FFake.EnqueueResponse(200, RemoteFolderWithoutIdJson);
+
+  const Item = FDrive.GetItem(SharedName);
+
+  const IsShortcut = Item.IsFolderShortcut;
+  Assert.AreEqual(OwnerDriveId, Item.RemoteDriveId);
+  Assert.IsFalse(IsShortcut);
+end;
+
+procedure TGraphDriveClientTests.GetItem_OwnFacetAndRemoteFacet_OwnFacetWins;
+begin
+  FFake.EnqueueResponse(200, OwnFileWithRemoteFolderJson);
+
+  const Item = FDrive.GetItem(LooseFileName);
+
+  const Kind = Ord(Item.Kind);
+  Assert.AreEqual(FileKind, Kind);
+end;
+
 procedure TGraphDriveClientTests.ForDrive_UsesTheDrivesSegment;
 begin
   const Drive: IGraphDriveClient = TGraphDriveClient.Create(TGraphDriveConfig.ForDrive(Token, 'b!lib-42'), FFake);
@@ -162,6 +339,177 @@ begin
   Drive.GetItem('');
 
   Assert.AreEqual('https://graph.microsoft.com/v1.0/drives/b!lib-42/root', FFake.LastRequest.Url);
+end;
+
+procedure TGraphDriveClientTests.ForMyDrive_UrlsStayRootRelative;
+begin
+  EnqueueItemCalls;
+  const ItemUrl = Format(ItemUrlFormat, [MyRootUrl, NotesFolder]);
+  const ChildrenUrl = Format(ChildrenUrlFormat, [MyRootUrl, NotesFolder]);
+  const UploadUrl = Format(UploadUrlFormat, [MyRootUrl, NotePath]);
+  const DeleteUrl = Format(ItemUrlFormat, [MyRootUrl, NotePath]);
+
+  FDrive.GetItem(NotesFolder);
+  const GetUrl = LastUrl;
+  FDrive.ListChildren(NotesFolder);
+  const ListUrl = LastUrl;
+  UploadNote(FDrive);
+  const UploadedUrl = LastUrl;
+  FDrive.CreateFolder(NotesFolder, NewFolderName);
+  const CreateUrl = LastUrl;
+  FDrive.Delete(NotePath);
+  const DeletedUrl = LastUrl;
+
+  Assert.AreEqual(ItemUrl, GetUrl);
+  Assert.AreEqual(ChildrenUrl, ListUrl);
+  Assert.AreEqual(UploadUrl, UploadedUrl);
+  Assert.AreEqual(ChildrenUrl, CreateUrl);
+  Assert.AreEqual(DeleteUrl, DeletedUrl);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_BuildsItemUrls;
+begin
+  const Drive = FolderDrive(FolderId);
+  EnqueueItemCalls;
+  const ItemUrl = Format(ItemUrlFormat, [FolderUrl, NotesFolder]);
+  const RootChildrenUrl = Format(AddressFormat, [FolderUrl, ChildrenSuffix]);
+  const UploadUrl = Format(UploadUrlFormat, [FolderUrl, NotePath]);
+  const ChildrenUrl = Format(ChildrenUrlFormat, [FolderUrl, NotesFolder]);
+  const DeleteUrl = Format(ItemUrlFormat, [FolderUrl, NotePath]);
+
+  Drive.GetItem(NotesFolder);
+  const GetUrl = LastUrl;
+  Drive.ListChildren(NoValue);
+  const ListUrl = LastUrl;
+  UploadNote(Drive);
+  const UploadedUrl = LastUrl;
+  Drive.CreateFolder(NotesFolder, NewFolderName);
+  const CreateUrl = LastUrl;
+  Drive.Delete(NotePath);
+  const DeletedUrl = LastUrl;
+
+  Assert.AreEqual(ItemUrl, GetUrl);
+  Assert.AreEqual(RootChildrenUrl, ListUrl);
+  Assert.AreEqual(UploadUrl, UploadedUrl);
+  Assert.AreEqual(ChildrenUrl, CreateUrl);
+  Assert.AreEqual(DeleteUrl, DeletedUrl);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_Delta_UsesTheFolder;
+begin
+  const Drive = FolderDrive(FolderId);
+  const FirstPage = Format(DeltaPageFormat, [FolderUrl, FirstDeltaToken]);
+  const LatestPage = Format(DeltaPageFormat, [FolderUrl, 't2']);
+  const DeltaUrl = Format(AddressFormat, [FolderUrl, DeltaSuffix]);
+  const LatestUrl = Format(AddressFormat, [FolderUrl, LatestDeltaSuffix]);
+  FFake.EnqueueResponse(200, FirstPage);
+  FFake.EnqueueResponse(200, LatestPage);
+
+  Drive.Delta(NoValue);
+  const RequestedDeltaUrl = LastUrl;
+  Drive.LatestDeltaLink;
+  const RequestedLatestUrl = LastUrl;
+
+  Assert.AreEqual(DeltaUrl, RequestedDeltaUrl);
+  Assert.AreEqual(LatestUrl, RequestedLatestUrl);
+end;
+
+procedure TGraphDriveClientTests.ForFolder_EmptyDriveId_RaisesValidationError;
+begin
+  Assert.WillRaiseWithMessage(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, NoValue, FolderId);
+    end,
+    EGraphDriveValidationError,
+    'A folder address needs the id of the drive');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_EmptyFolderId_RaisesValidationError;
+begin
+  Assert.WillRaiseWithMessage(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, DriveId, NoValue);
+    end,
+    EGraphDriveValidationError,
+    'A folder address needs the id of the folder');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_DotFolderId_RaisesValidationError(const FolderId: string);
+begin
+  Assert.WillRaiseWithMessage(
+    procedure
+    begin
+      TGraphDriveConfig.ForFolder(Token, DriveId, FolderId);
+    end,
+    EGraphDriveValidationError,
+    'A folder address needs a real folder id, not "." or ".."');
+end;
+
+procedure TGraphDriveClientTests.ForFolder_FolderIdWithSpecialCharacters_EncodesItAsOneSegment;
+begin
+  const Drive = FolderDrive('B7F0!12#3/x');
+  const Body = FolderJson(NotesItemId, NotesFolder);
+  FFake.EnqueueResponse(200, Body);
+
+  Drive.GetItem(NotesFolder);
+
+  const RequestedUrl = LastUrl;
+  Assert.AreEqual(EncodedFolderItemUrl, RequestedUrl);
+end;
+
+procedure TGraphDriveClientTests.EmptyRootAddress_FallsBackToTheDriveRoot;
+begin
+  var Config := Default(TGraphDriveConfig);
+  Config.AccessToken := Token;
+  Config.BaseUrl     := GraphDriveDefaultBaseUrl;
+  Config.DrivePath   := GraphMyDrivePath;
+  const Drive: IGraphDriveClient = TGraphDriveClient.Create(Config, FFake);
+  const RootBody = FolderJson(RootItemId, RootName);
+  const DeltaBody = Format(DeltaPageFormat, [MyRootUrl, FirstDeltaToken]);
+  const DeltaUrl = Format(AddressFormat, [MyRootUrl, DeltaSuffix]);
+  FFake.EnqueueResponse(200, RootBody);
+  FFake.EnqueueResponse(200, DeltaBody);
+
+  Drive.GetItem(NoValue);
+  const RootUrl = LastUrl;
+  Drive.Delta(NoValue);
+  const RequestedDeltaUrl = LastUrl;
+
+  Assert.AreEqual(MyRootUrl, RootUrl);
+  Assert.AreEqual(DeltaUrl, RequestedDeltaUrl);
+end;
+
+function TGraphDriveClientTests.FolderDrive(const ItemId: string): IGraphDriveClient;
+begin
+  const Config = TGraphDriveConfig.ForFolder(Token, DriveId, ItemId);
+  Result := TGraphDriveClient.Create(Config, FFake);
+end;
+
+procedure TGraphDriveClientTests.EnqueueItemCalls;
+begin
+  const FolderBody = FolderJson(NotesItemId, NotesFolder);
+  const UploadedBody = FileJson(FileItemId, NoteName, ETagValue);
+  const CreatedBody = FolderJson('n2', NewFolderName);
+  FFake.EnqueueResponse(200, FolderBody);
+  FFake.EnqueueResponse(200, EmptyPage);
+  FFake.EnqueueResponse(201, UploadedBody);
+  FFake.EnqueueResponse(201, CreatedBody);
+  FFake.EnqueueResponse(204, NoValue);
+end;
+
+procedure TGraphDriveClientTests.UploadNote(const Drive: IGraphDriveClient);
+begin
+  const Request = TGraphDriveUploadRequest.ForPath(NotePath, TGraphDriveWriteMode.Replace);
+  const Content = TEncoding.UTF8.GetBytes(NoteContent);
+  Drive.Upload(Request, Content);
+end;
+
+function TGraphDriveClientTests.LastUrl: string;
+begin
+  const Request = FFake.LastRequest;
+  Result := Request.Url;
 end;
 
 procedure TGraphDriveClientTests.ListChildren_Folder_MapsItemsAndNextLink;
