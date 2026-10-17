@@ -18,10 +18,7 @@ type
   /// <summary>
   /// Where a drive client points: the base URL of Microsoft Graph and the drive
   /// segment (<c>/me/drive</c> for the signed-in user's OneDrive, or
-  /// <c>/drives/{drive-id}</c> for a SharePoint document library). The root
-  /// address is the item that paths are relative to: <c>/root</c>, or
-  /// <c>/items/{id}</c> for a folder in someone else's drive, such as a shared
-  /// folder.
+  /// <c>/drives/{drive-id}</c> for a SharePoint document library).
   /// </summary>
   TGraphDriveConfig = record
     AccessToken: string;
@@ -38,10 +35,7 @@ type
   /// A file or folder in a drive. <c>ETag</c> changes with every change to the
   /// item and is the value to send in <c>If-Match</c>; <c>DownloadUrl</c> is a
   /// short-lived, pre-authenticated link (files only); <c>Raw</c> holds the full
-  /// item JSON. <c>ParentDriveId</c> is the drive the item lives in. A shortcut
-  /// to something in another drive (OneDrive's "Add to My files") carries the
-  /// target in <c>RemoteDriveId</c> and <c>RemoteItemId</c>; <c>RemoteIsFolder</c>
-  /// tells whether that target is a folder.
+  /// item JSON.
   /// </summary>
   TGraphDriveItem = record
     Id: string;
@@ -60,10 +54,6 @@ type
     DownloadUrl: string;
     Raw: string;
 
-    /// <summary>
-    /// True when the item is a shortcut to a folder in another drive: the
-    /// target id (<c>RemoteItemId</c>) is known and the target is a folder.
-    /// </summary>
     function IsFolderShortcut: Boolean;
   end;
 
@@ -97,11 +87,13 @@ uses
   MSGraph.Graph.Drive.Path;
 
 const
-  SMissingDriveId = 'A folder address needs the id of the drive';
-  SMissingFolderId = 'A folder address needs the id of the folder';
-  SUnsafeFolderId = 'A folder address needs a real folder id, not "." or ".."';
   CurrentSegment = '.';
-  ParentSegment = '..';
+  ParentSegment  = '..';
+
+resourcestring
+  SMissingDriveId  = 'A folder address needs the id of the drive';
+  SMissingFolderId = 'A folder address needs the id of the folder';
+  SUnsafeFolderId  = 'A folder address needs a real folder id, not "." or ".."';
 
 class function TGraphDriveConfig.ForMyDrive(const AccessToken: string): TGraphDriveConfig;
 begin
@@ -121,13 +113,17 @@ end;
 
 class function TGraphDriveConfig.ForFolder(const AccessToken, DriveId, FolderId: string): TGraphDriveConfig;
 begin
-  if DriveId.Trim.IsEmpty then
+  const TrimmedDriveId = DriveId.Trim;
+  const HasDriveId = not TrimmedDriveId.IsEmpty;
+  if not HasDriveId then
     raise EGraphDriveValidationError.Create(0, '', SMissingDriveId);
 
-  if FolderId.Trim.IsEmpty then
+  const TrimmedFolderId = FolderId.Trim;
+  const HasFolderId = not TrimmedFolderId.IsEmpty;
+  if not HasFolderId then
     raise EGraphDriveValidationError.Create(0, '', SMissingFolderId);
 
-  const IsDotSegment = (FolderId = CurrentSegment) or (FolderId = ParentSegment);
+  const IsDotSegment = ((FolderId = CurrentSegment) or (FolderId = ParentSegment));
   if IsDotSegment then
     raise EGraphDriveValidationError.Create(0, '', SUnsafeFolderId);
 
@@ -141,7 +137,8 @@ end;
 
 function TGraphDriveItem.IsFolderShortcut: Boolean;
 begin
-  Result := (not RemoteItemId.IsEmpty) and RemoteIsFolder;
+  const HasRemoteItem = not RemoteItemId.IsEmpty;
+  Result := (HasRemoteItem and RemoteIsFolder);
 end;
 
 function TGraphDrivePage.HasMore: Boolean;

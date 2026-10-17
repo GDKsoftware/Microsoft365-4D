@@ -170,21 +170,31 @@ end;
 
 class function TGraphDriveMapper.HasFacet(const Obj: TJSONObject; const Key: string): Boolean;
 begin
-  Result := Assigned(Obj) and Assigned(Obj.GetValue(Key));
+  const HasObject = Assigned(Obj);
+  if not HasObject then
+    Exit(False);
+
+  const Facet = Obj.GetValue(Key);
+  Result := Assigned(Facet);
 end;
 
 class function TGraphDriveMapper.KindOf(const Obj, RemoteItem: TJSONObject): TGraphDriveItemKind;
 begin
-  if HasFacet(Obj, KeyFolder) then
+  const IsFolder = HasFacet(Obj, KeyFolder);
+  const IsFile = HasFacet(Obj, KeyFile);
+  const IsRemoteFolder = HasFacet(RemoteItem, KeyFolder);
+  const IsRemoteFile = HasFacet(RemoteItem, KeyFile);
+
+  if IsFolder then
     Exit(TGraphDriveItemKind.FolderItem);
 
-  if HasFacet(Obj, KeyFile) then
+  if IsFile then
     Exit(TGraphDriveItemKind.FileItem);
 
-  if HasFacet(RemoteItem, KeyFolder) then
+  if IsRemoteFolder then
     Exit(TGraphDriveItemKind.FolderItem);
 
-  if HasFacet(RemoteItem, KeyFile) then
+  if IsRemoteFile then
     Exit(TGraphDriveItemKind.FileItem);
 
   Result := TGraphDriveItemKind.Unknown;

@@ -7,8 +7,7 @@ type
   /// Builds the path-based item addresses of the drive API. A drive-relative
   /// path such as <c>Notes/2026-10-14 Idee #1.md</c> becomes
   /// <c>/root:/Notes/2026-10-14%20Idee%20%231.md:</c>; an empty path is
-  /// <c>/root</c>. Every function takes the root address the path is relative
-  /// to: <c>/root</c> for a drive, or <c>/items/{id}</c> for a folder item.
+  /// <c>/root</c>.
   /// </summary>
   TGraphDrivePath = class
   strict private

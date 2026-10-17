@@ -61,6 +61,8 @@ uses
 
 const
   FolderAddress = '/items/ABC';
+  NotePath      = 'Notes/a.md';
+  AccentedPath  = 'Idee #1 '#$E9'.md';
 
 procedure TGraphDrivePathTests.Encode_PercentEncodesEachSegment(const Path, Expected: string);
 begin
@@ -94,7 +96,7 @@ end;
 
 procedure TGraphDrivePathTests.ItemAddress_PathUnderFolder_AddressesRelativeToTheFolderItem;
 begin
-  const Address = TGraphDrivePath.ItemAddress(FolderAddress, 'Notes/a.md');
+  const Address = TGraphDrivePath.ItemAddress(FolderAddress, NotePath);
 
   Assert.AreEqual('/items/ABC:/Notes/a.md:', Address);
 end;
@@ -122,16 +124,14 @@ end;
 
 procedure TGraphDrivePathTests.ContentAddress_UnderFolder_AddressesRelativeToTheFolderItem;
 begin
-  const Address = TGraphDrivePath.ContentAddress(FolderAddress, 'Notes/a.md');
+  const Address = TGraphDrivePath.ContentAddress(FolderAddress, NotePath);
 
   Assert.AreEqual('/items/ABC:/Notes/a.md:/content', Address);
 end;
 
 procedure TGraphDrivePathTests.ItemAddress_SpecialCharactersUnderFolder_EncodesEachSegment;
 begin
-  const Path: string = 'Idee #1 ' + Char($E9) + '.md';
-
-  const Address = TGraphDrivePath.ItemAddress(FolderAddress, Path);
+  const Address = TGraphDrivePath.ItemAddress(FolderAddress, AccentedPath);
 
   Assert.AreEqual('/items/ABC:/Idee%20%231%20%C3%A9.md:', Address);
 end;

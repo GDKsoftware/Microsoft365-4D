@@ -31,6 +31,7 @@ type
       ContentTypeOctetStream = 'application/octet-stream';
       DeltaSuffix = '/delta';
       LatestDeltaSuffix = '/delta?token=latest';
+      AddressFormat = '%s%s';
       ConflictBehaviorReplace = '?@microsoft.graph.conflictBehavior=replace';
       ConflictBehaviorFail = '?@microsoft.graph.conflictBehavior=fail';
       KeyName = 'name';
@@ -182,9 +183,12 @@ function TGraphDriveClient.Delta(const Link: string): TGraphDrivePage;
 begin
   if Link.IsEmpty then
   begin
-    const Url = DriveUrl(RootAddress + DeltaSuffix);
+    const Root = RootAddress;
+    const DeltaAddress = Format(AddressFormat, [Root, DeltaSuffix]);
+    const Url = DriveUrl(DeltaAddress);
     const Json = GetJson(Url);
-    Exit(TGraphDriveMapper.PageFromJson(Json));
+    Result := TGraphDriveMapper.PageFromJson(Json);
+    Exit;
   end;
 
   GuardGraphLink(Link);
@@ -193,7 +197,9 @@ end;
 
 function TGraphDriveClient.LatestDeltaLink: string;
 begin
-  const Url = DriveUrl(RootAddress + LatestDeltaSuffix);
+  const Root = RootAddress;
+  const LatestAddress = Format(AddressFormat, [Root, LatestDeltaSuffix]);
+  const Url = DriveUrl(LatestAddress);
   const Json = GetJson(Url);
   const Page = TGraphDriveMapper.PageFromJson(Json);
   Result := Page.DeltaLink;
