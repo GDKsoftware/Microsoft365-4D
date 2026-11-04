@@ -22,10 +22,8 @@ uses
   MSGraph.Graph.Drive.Path.Tests in 'MSGraph.Graph.Drive.Path.Tests.pas',
   MSGraph.Graph.Drive.Tests in 'MSGraph.Graph.Drive.Tests.pas',
   MSGraph.OAuth2.PKCE.Random.Tests in 'MSGraph.OAuth2.PKCE.Random.Tests.pas',
-  MSGraph.OAuth2.PKCE.Random.Windows.Tests in 'MSGraph.OAuth2.PKCE.Random.Windows.Tests.pas',
-  MSGraph.OAuth2.PKCE.Random.Interfaces in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Interfaces.pas',
-  MSGraph.OAuth2.PKCE.Random in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.pas',
-  MSGraph.OAuth2.PKCE.Random.Windows in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Windows.pas';
+  MSGraph.OAuth2.PKCE.Random.Windows.Stub in 'MSGraph.OAuth2.PKCE.Random.Windows.Stub.pas',
+  MSGraph.OAuth2.PKCE.Random.Windows.Tests in 'MSGraph.OAuth2.PKCE.Random.Windows.Tests.pas';
 
 { keep comment here to protect the following conditional from being removed by the IDE when adding a unit }
 {$IFNDEF TESTINSIGHT}
