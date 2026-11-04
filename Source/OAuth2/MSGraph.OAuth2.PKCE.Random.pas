@@ -39,14 +39,15 @@ begin
 end;
 
 function TOAuth2PKCERandom.GenerateSecureRandomString(const Length: Integer): string;
-const
-  Base64UrlChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 begin
-  const RandomBytes = GenerateRandomBytes(Length);
+  const BytesPerGroup      = 3;
+  const CharactersPerGroup = 4;
 
-  Result := '';
-  for var RandomByte in RandomBytes do
-    Result := Result + Base64UrlChars[(RandomByte mod 64) + 1];
+  const ByteCount   = (Length * BytesPerGroup + CharactersPerGroup - 1) div CharactersPerGroup;
+  const RandomBytes = GenerateRandomBytes(ByteCount);
+  const Encoded     = TNetEncoding.Base64URL.EncodeBytesToString(RandomBytes);
+
+  Result := Encoded.Substring(0, Length);
 end;
 
 function TOAuth2PKCERandom.GenerateRandomBytes(const Count: Integer): TBytes;

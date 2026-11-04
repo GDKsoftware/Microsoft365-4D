@@ -13,6 +13,9 @@ type
     const
       CodeVerifierLength = 128;
       StateTimeoutMinutes = 5;
+
+    class function CreateRandom: IOAuth2PKCERandom; static;
+
   public
     class function Generate: TPKCESession; overload;
     class function Generate(const Random: IOAuth2PKCERandom): TPKCESession; overload;
@@ -21,11 +24,16 @@ type
 implementation
 
 uses
+  {$IFDEF MSWINDOWS}
+  MSGraph.OAuth2.PKCE.Random.Windows,
+  {$ENDIF}
   MSGraph.OAuth2.PKCE.Random;
 
 class function TOAuth2PKCE.Generate: TPKCESession;
 begin
-  Result := Generate(TOAuth2PKCERandom.Create);
+  const PlatformRandom = CreateRandom;
+
+  Result := Generate(PlatformRandom);
 end;
 
 class function TOAuth2PKCE.Generate(const Random: IOAuth2PKCERandom): TPKCESession;
@@ -34,6 +42,15 @@ begin
   Result.CodeChallenge := Random.GenerateCodeChallenge(Result.CodeVerifier);
   Result.State := Random.GenerateNonce;
   Result.ExpiresAt := Now + (StateTimeoutMinutes / (24 * 60));
+end;
+
+class function TOAuth2PKCE.CreateRandom: IOAuth2PKCERandom;
+begin
+  {$IFDEF MSWINDOWS}
+  Result := TOAuth2PKCERandomWindows.Create;
+  {$ELSE}
+  Result := TOAuth2PKCERandom.Create;
+  {$ENDIF}
 end;
 
 end.
