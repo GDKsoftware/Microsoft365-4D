@@ -97,8 +97,10 @@
         <DCCReference Include="MSGraph.Graph.Drive.Path.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Drive.Tests.pas"/>
         <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Tests.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Windows.Tests.pas"/>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Interfaces.pas"/>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.pas"/>
+        <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Windows.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
