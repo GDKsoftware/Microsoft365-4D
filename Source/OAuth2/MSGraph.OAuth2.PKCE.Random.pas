@@ -11,7 +11,6 @@ uses
 type
   TOAuth2PKCERandom = class(TInterfacedObject, IOAuth2PKCERandom)
   public
-    function Base64UrlEncode(const Data: TBytes): string;
     function GenerateSecureRandomString(const Length: Integer): string;
     function GenerateCodeChallenge(const CodeVerifier: string): string;
     function GenerateNonce: string;
@@ -21,24 +20,19 @@ implementation
 
 { TOAuth2PKCERandom }
 
-function TOAuth2PKCERandom.Base64UrlEncode(const Data: TBytes): string;
-begin
-  Result := TNetEncoding.Base64String.EncodeBytesToString(Data);
-  Result := Result.Replace('+', '-').Replace('/', '_').Replace('=', '');
-end;
-
 function TOAuth2PKCERandom.GenerateCodeChallenge(const CodeVerifier: string): string;
 begin
-  var Hash := THashSHA2.GetHashBytes(CodeVerifier);
-  Result := Base64UrlEncode(Hash);
+  const Hash = THashSHA2.GetHashBytes(CodeVerifier);
+  Result := TNetEncoding.Base64URL.EncodeBytesToString(Hash);
 end;
 
 function TOAuth2PKCERandom.GenerateNonce: string;
-var
-  Guid: TGUID;
 begin
-  CreateGUID(Guid);
-  Result := GUIDToString(Guid).Replace('{', '').Replace('}', '').Replace('-', '');
+  const DigitsOnlyFormat = 'N';
+
+  const Guid = TGUID.NewGuid;
+
+  Result := Guid.ToString(DigitsOnlyFormat);
 end;
 
 function TOAuth2PKCERandom.GenerateSecureRandomString(const Length: Integer): string;
