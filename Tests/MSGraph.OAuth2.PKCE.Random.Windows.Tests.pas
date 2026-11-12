@@ -39,9 +39,6 @@ type
     procedure GenerateSecureRandomString_TwoCalls_ReturnDifferentValues;
 
     [Test]
-    procedure GenerateCodeChallenge_Rfc7636Example_ReturnsExpectedChallenge;
-
-    [Test]
     [TestCase('LibraryMissing', MissingLibraryName)]
     [TestCase('FunctionMissing', LibraryWithoutBCryptName)]
     procedure GenerateSecureRandomString_BCryptUnavailable_RaisesRandomException(const LibraryName: string);
@@ -100,15 +97,6 @@ begin
   const Second = FRandom.GenerateSecureRandomString(43);
 
   Assert.AreNotEqual(First, Second);
-end;
-
-procedure TOAuth2PKCERandomWindowsTests.GenerateCodeChallenge_Rfc7636Example_ReturnsExpectedChallenge;
-begin
-  const CodeVerifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-
-  const Challenge = FRandom.GenerateCodeChallenge(CodeVerifier);
-
-  Assert.AreEqual('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', Challenge);
 end;
 
 procedure TOAuth2PKCERandomWindowsTests.GenerateSecureRandomString_BCryptUnavailable_RaisesRandomException(const LibraryName: string);

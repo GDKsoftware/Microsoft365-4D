@@ -15,19 +15,12 @@ type
 
   public
     function GenerateSecureRandomString(const Length: Integer): string;
-    function GenerateCodeChallenge(const CodeVerifier: string): string;
     function GenerateNonce: string;
   end;
 
 implementation
 
 { TOAuth2PKCERandom }
-
-function TOAuth2PKCERandom.GenerateCodeChallenge(const CodeVerifier: string): string;
-begin
-  const Hash = THashSHA2.GetHashBytes(CodeVerifier);
-  Result := TNetEncoding.Base64URL.EncodeBytesToString(Hash);
-end;
 
 function TOAuth2PKCERandom.GenerateNonce: string;
 begin

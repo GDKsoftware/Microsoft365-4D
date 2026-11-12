@@ -23,13 +23,6 @@ type
     procedure TearDown;
 
     [Test]
-    procedure GenerateCodeChallenge_Rfc7636Example_ReturnsExpectedChallenge;
-    [Test]
-    procedure GenerateCodeChallenge_SameVerifier_ReturnsSameChallenge;
-    [Test]
-    procedure GenerateCodeChallenge_AnyVerifier_Returns43UrlSafeCharacters;
-
-    [Test]
     [TestCase('Zero', '0')]
     [TestCase('Minimum', '43')]
     [TestCase('Maximum', '128')]
@@ -62,35 +55,6 @@ end;
 procedure TOAuth2PKCERandomTests.TearDown;
 begin
   FRandom := nil;
-end;
-
-procedure TOAuth2PKCERandomTests.GenerateCodeChallenge_Rfc7636Example_ReturnsExpectedChallenge;
-begin
-  const CodeVerifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-
-  const Challenge = FRandom.GenerateCodeChallenge(CodeVerifier);
-
-  Assert.AreEqual('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', Challenge);
-end;
-
-procedure TOAuth2PKCERandomTests.GenerateCodeChallenge_SameVerifier_ReturnsSameChallenge;
-begin
-  const CodeVerifier = FRandom.GenerateSecureRandomString(64);
-
-  const First  = FRandom.GenerateCodeChallenge(CodeVerifier);
-  const Second = FRandom.GenerateCodeChallenge(CodeVerifier);
-
-  Assert.AreEqual(First, Second);
-end;
-
-procedure TOAuth2PKCERandomTests.GenerateCodeChallenge_AnyVerifier_Returns43UrlSafeCharacters;
-begin
-  const CodeVerifier = FRandom.GenerateSecureRandomString(128);
-
-  const Challenge = FRandom.GenerateCodeChallenge(CodeVerifier);
-
-  Assert.AreEqual(43, Challenge.Length);
-  Assert.IsTrue(ContainsOnly(Challenge, UrlSafeCharacters), Challenge);
 end;
 
 procedure TOAuth2PKCERandomTests.GenerateSecureRandomString_GivenLength_ReturnsThatLength(const RequestedLength: Integer);
