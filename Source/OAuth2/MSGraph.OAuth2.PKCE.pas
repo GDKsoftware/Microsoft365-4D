@@ -25,9 +25,10 @@ implementation
 
 uses
   {$IFDEF MSWINDOWS}
-  MSGraph.OAuth2.PKCE.Random.Windows,
+  MSGraph.OAuth2.PKCE.Random.Windows;
+  {$ELSE}
+  MSGraph.OAuth2.PKCE.Random.Posix;
   {$ENDIF}
-  MSGraph.OAuth2.PKCE.Random;
 
 class function TOAuth2PKCE.Generate: TPKCESession;
 begin
@@ -49,7 +50,7 @@ begin
   {$IFDEF MSWINDOWS}
   Result := TOAuth2PKCERandomWindows.Create;
   {$ELSE}
-  Result := TOAuth2PKCERandom.Create;
+  Result := TOAuth2PKCERandomPosix.Create;
   {$ENDIF}
 end;
 

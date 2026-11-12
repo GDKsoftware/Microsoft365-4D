@@ -49,6 +49,11 @@ type
     procedure GenerateSecureRandomString_ZeroLengthWithBCryptUnavailable_ReturnsEmpty;
     [Test]
     procedure GenerateSecureRandomString_LibraryOnlyInApplicationDirectory_RaisesRandomException;
+
+    [Test]
+    procedure GenerateNonce_TwoCalls_ReturnDifferentValues;
+    [Test]
+    procedure GenerateNonce_BCryptUnavailable_RaisesRandomException;
   end;
 
 implementation
@@ -146,6 +151,26 @@ begin
   finally
     TFile.Delete(PlantedPath);
   end;
+end;
+
+procedure TOAuth2PKCERandomWindowsTests.GenerateNonce_TwoCalls_ReturnDifferentValues;
+begin
+  const First  = FRandom.GenerateNonce;
+  const Second = FRandom.GenerateNonce;
+
+  Assert.AreNotEqual(First, Second);
+end;
+
+procedure TOAuth2PKCERandomWindowsTests.GenerateNonce_BCryptUnavailable_RaisesRandomException;
+begin
+  const UnavailableRandom: IOAuth2PKCERandom = TOAuth2PKCERandomWindowsStub.Create(MissingLibraryName);
+
+  Assert.WillRaise(
+    procedure
+    begin
+      UnavailableRandom.GenerateNonce;
+    end,
+    EOAuth2RandomException);
 end;
 
 procedure TOAuth2PKCERandomWindowsTests.PlantLibrary(const PlantedPath: string);

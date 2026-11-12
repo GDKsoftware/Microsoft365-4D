@@ -9,9 +9,9 @@ uses
   System.Hash;
 
 type
-  TOAuth2PKCERandom = class(TInterfacedObject, IOAuth2PKCERandom)
+  TOAuth2PKCERandom = class abstract(TInterfacedObject, IOAuth2PKCERandom)
   protected
-    function GenerateRandomBytes(const Count: Integer): TBytes; virtual;
+    function GenerateRandomBytes(const Count: Integer): TBytes; virtual; abstract;
 
   public
     function GenerateSecureRandomString(const Length: Integer): string;
@@ -31,11 +31,11 @@ end;
 
 function TOAuth2PKCERandom.GenerateNonce: string;
 begin
-  const DigitsOnlyFormat = 'N';
+  const NonceByteCount = 16;
 
-  const Guid = TGUID.NewGuid;
+  const RandomBytes = GenerateRandomBytes(NonceByteCount);
 
-  Result := Guid.ToString(DigitsOnlyFormat);
+  Result := THash.DigestAsString(RandomBytes);
 end;
 
 function TOAuth2PKCERandom.GenerateSecureRandomString(const Length: Integer): string;
@@ -48,14 +48,6 @@ begin
   const Encoded     = TNetEncoding.Base64URL.EncodeBytesToString(RandomBytes);
 
   Result := Encoded.Substring(0, Length);
-end;
-
-function TOAuth2PKCERandom.GenerateRandomBytes(const Count: Integer): TBytes;
-begin
-  SetLength(Result, Count);
-
-  for var Index := 0 to Count - 1 do
-    Result[Index] := Random(256);
 end;
 
 end.

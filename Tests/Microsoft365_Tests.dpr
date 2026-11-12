@@ -21,6 +21,7 @@ uses
   MSGraph.Graph.Calendar.Tests in 'MSGraph.Graph.Calendar.Tests.pas',
   MSGraph.Graph.Drive.Path.Tests in 'MSGraph.Graph.Drive.Path.Tests.pas',
   MSGraph.Graph.Drive.Tests in 'MSGraph.Graph.Drive.Tests.pas',
+  MSGraph.OAuth2.PKCE.Random.Stub in 'MSGraph.OAuth2.PKCE.Random.Stub.pas',
   MSGraph.OAuth2.PKCE.Random.Tests in 'MSGraph.OAuth2.PKCE.Random.Tests.pas',
   MSGraph.OAuth2.PKCE.Random.Windows.Stub in 'MSGraph.OAuth2.PKCE.Random.Windows.Stub.pas',
   MSGraph.OAuth2.PKCE.Random.Windows.Tests in 'MSGraph.OAuth2.PKCE.Random.Windows.Tests.pas';

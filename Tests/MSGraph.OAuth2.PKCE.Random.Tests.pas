@@ -38,17 +38,17 @@ type
     [Test]
     procedure GenerateSecureRandomString_Generated_ContainsOnlyUrlSafeCharacters;
     [Test]
-    procedure GenerateSecureRandomString_TwoCalls_ReturnDifferentValues;
+    procedure GenerateSecureRandomString_KnownBytes_ReturnsTheirBase64Url;
 
     [Test]
     procedure GenerateNonce_Generated_Returns32HexCharacters;
     [Test]
-    procedure GenerateNonce_TwoCalls_ReturnDifferentValues;
+    procedure GenerateNonce_KnownBytes_ReturnsTheirHex;
   end;
 implementation
 
 uses
-  MSGraph.OAuth2.PKCE.Random;
+  MSGraph.OAuth2.PKCE.Random.Stub;
 
 const
   UrlSafeCharacters = ['A'..'Z', 'a'..'z', '0'..'9', '-', '_'];
@@ -56,7 +56,7 @@ const
 
 procedure TOAuth2PKCERandomTests.Setup;
 begin
-  FRandom := TOAuth2PKCERandom.Create;
+  FRandom := TOAuth2PKCERandomStub.Create;
 end;
 
 procedure TOAuth2PKCERandomTests.TearDown;
@@ -107,12 +107,11 @@ begin
   Assert.IsTrue(ContainsOnly(Generated, UrlSafeCharacters), Generated);
 end;
 
-procedure TOAuth2PKCERandomTests.GenerateSecureRandomString_TwoCalls_ReturnDifferentValues;
+procedure TOAuth2PKCERandomTests.GenerateSecureRandomString_KnownBytes_ReturnsTheirBase64Url;
 begin
-  const First  = FRandom.GenerateSecureRandomString(43);
-  const Second = FRandom.GenerateSecureRandomString(43);
+  const Generated = FRandom.GenerateSecureRandomString(8);
 
-  Assert.AreNotEqual(First, Second);
+  Assert.AreEqual('AAECAwQF', Generated);
 end;
 
 procedure TOAuth2PKCERandomTests.GenerateNonce_Generated_Returns32HexCharacters;
@@ -123,12 +122,11 @@ begin
   Assert.IsTrue(ContainsOnly(Nonce, HexCharacters), Nonce);
 end;
 
-procedure TOAuth2PKCERandomTests.GenerateNonce_TwoCalls_ReturnDifferentValues;
+procedure TOAuth2PKCERandomTests.GenerateNonce_KnownBytes_ReturnsTheirHex;
 begin
-  const First  = FRandom.GenerateNonce;
-  const Second = FRandom.GenerateNonce;
+  const Nonce = FRandom.GenerateNonce;
 
-  Assert.AreNotEqual(First, Second);
+  Assert.AreEqual('000102030405060708090a0b0c0d0e0f', Nonce);
 end;
 
 function TOAuth2PKCERandomTests.ContainsOnly(const Value: string; const Allowed: TSysCharSet): Boolean;
