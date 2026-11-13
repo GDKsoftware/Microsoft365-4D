@@ -276,6 +276,10 @@ Source/
   OAuth2/
     MSGraph.OAuth2.Types.pas              -Config records, token response, PKCE session, exceptions
     MSGraph.OAuth2.PKCE.pas               -PKCE code_verifier + code_challenge generation
+    MSGraph.OAuth2.PKCE.Random.Interfaces.pas -IOAuth2PKCERandom, to supply your own random source
+    MSGraph.OAuth2.PKCE.Random.pas        -Base class: encodes random bytes into verifier and state
+    MSGraph.OAuth2.PKCE.Random.Windows.pas -Random bytes from BCryptGenRandom
+    MSGraph.OAuth2.PKCE.Random.Posix.pas  -Random bytes from /dev/urandom
     MSGraph.OAuth2.Client.pas             -OAuth2 flow: auth URL, token exchange, refresh
     MSGraph.OAuth2.TokenStore.pas         -Thread-safe in-memory token + PKCE storage
   Graph/
@@ -317,6 +321,7 @@ All library exceptions inherit from `EMSGraphException`:
 |-----------|---------------|-----------|
 | `EMSGraphException` | `Exception` | Base exception for all Microsoft365-4D errors |
 | `EOAuth2Exception` | `EMSGraphException` | Token exchange failures, invalid responses |
+| `EOAuth2RandomException` | `EOAuth2Exception` | The system random source is unavailable while generating a PKCE session |
 | `EGraphApiException` | `EMSGraphException` | Anything that stops a Graph call from succeeding: an HTTP error, a missing access token, an interrupted upload, or a request the library refuses to send |
 | `ETokenStoreException` | `EMSGraphException` | Missing tokens, expired PKCE sessions |
 | `EInvalidMailHeaderException` | `EGraphApiException` | Invalid custom mail header supplied by the caller |

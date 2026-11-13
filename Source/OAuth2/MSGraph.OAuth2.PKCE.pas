@@ -4,7 +4,8 @@ interface
 
 uses
   System.SysUtils,
-  MSGraph.OAuth2.Types;
+  MSGraph.OAuth2.Types,
+  MSGraph.OAuth2.PKCE.Random.Interfaces;
 
 type
   TOAuth2PKCE = class
@@ -13,62 +14,53 @@ type
       CodeVerifierLength = 128;
       StateTimeoutMinutes = 5;
 
-    class function Base64UrlEncode(const Data: TBytes): string;
-    class function GenerateSecureRandomString(const Length: Integer): string;
-    class function GenerateCodeChallenge(const CodeVerifier: string): string;
-    class function GenerateNonce: string;
+    class function CreateRandom: IOAuth2PKCERandom; static;
+
   public
-    class function Generate: TPKCESession;
+    class function Generate: TPKCESession; overload;
+    class function Generate(const Random: IOAuth2PKCERandom): TPKCESession; overload;
+    class function GenerateCodeChallenge(const CodeVerifier: string): string; static;
   end;
 
 implementation
 
 uses
+  System.Hash,
   System.NetEncoding,
-  System.Hash;
+  {$IFDEF MSWINDOWS}
+  MSGraph.OAuth2.PKCE.Random.Windows;
+  {$ELSE}
+  MSGraph.OAuth2.PKCE.Random.Posix;
+  {$ENDIF}
 
-class function TOAuth2PKCE.Base64UrlEncode(const Data: TBytes): string;
+class function TOAuth2PKCE.Generate: TPKCESession;
 begin
-  Result := TNetEncoding.Base64.EncodeBytesToString(Data);
-  Result := Result.Replace('+', '-').Replace('/', '_').Replace('=', '');
+  const PlatformRandom = CreateRandom;
+
+  Result := Generate(PlatformRandom);
 end;
 
-class function TOAuth2PKCE.GenerateSecureRandomString(const Length: Integer): string;
-const
-  Base64UrlChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+class function TOAuth2PKCE.CreateRandom: IOAuth2PKCERandom;
 begin
-  var RandomBytes: TBytes;
-  SetLength(RandomBytes, Length);
+  {$IFDEF MSWINDOWS}
+  Result := TOAuth2PKCERandomWindows.Create;
+  {$ELSE}
+  Result := TOAuth2PKCERandomPosix.Create;
+  {$ENDIF}
+end;
 
-  for var Index := 0 to Length - 1 do
-    RandomBytes[Index] := Random(256);
-
-  Result := '';
-  for var Index := 0 to Length - 1 do
-    Result := Result + Base64UrlChars[(RandomBytes[Index] mod 64) + 1];
+class function TOAuth2PKCE.Generate(const Random: IOAuth2PKCERandom): TPKCESession;
+begin
+  Result.CodeVerifier := Random.GenerateSecureRandomString(CodeVerifierLength);
+  Result.CodeChallenge := GenerateCodeChallenge(Result.CodeVerifier);
+  Result.State := Random.GenerateNonce;
+  Result.ExpiresAt := Now + (StateTimeoutMinutes / (24 * 60));
 end;
 
 class function TOAuth2PKCE.GenerateCodeChallenge(const CodeVerifier: string): string;
 begin
-  var Hash := THashSHA2.GetHashBytes(CodeVerifier);
-  Result := Base64UrlEncode(Hash);
-end;
-
-class function TOAuth2PKCE.GenerateNonce: string;
-var
-  Guid: TGUID;
-begin
-  CreateGUID(Guid);
-  Result := GUIDToString(Guid).Replace('{', '').Replace('}', '').Replace('-', '');
-end;
-
-class function TOAuth2PKCE.Generate: TPKCESession;
-begin
-  Randomize;
-  Result.CodeVerifier := GenerateSecureRandomString(CodeVerifierLength);
-  Result.CodeChallenge := GenerateCodeChallenge(Result.CodeVerifier);
-  Result.State := GenerateNonce;
-  Result.ExpiresAt := Now + (StateTimeoutMinutes / (24 * 60));
+  const Hash = THashSHA2.GetHashBytes(CodeVerifier);
+  Result := TNetEncoding.Base64URL.EncodeBytesToString(Hash);
 end;
 
 end.

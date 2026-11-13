@@ -96,6 +96,11 @@
         <DCCReference Include="MSGraph.Graph.Calendar.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Drive.Path.Tests.pas"/>
         <DCCReference Include="MSGraph.Graph.Drive.Tests.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Tests.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Stub.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Tests.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Windows.Stub.pas"/>
+        <DCCReference Include="MSGraph.OAuth2.PKCE.Random.Windows.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

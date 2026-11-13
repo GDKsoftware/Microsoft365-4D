@@ -152,6 +152,10 @@
         <DCCReference Include="..\..\Source\Graph\MSGraph.Graph.SharePoint.pas"/>
         <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.Client.pas"/>
         <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.PKCE.pas"/>
+        <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Interfaces.pas"/>
+        <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.pas"/>
+        <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Windows.pas"/>
+        <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Posix.pas"/>
         <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.TokenStore.pas"/>
         <DCCReference Include="..\..\Source\OAuth2\MSGraph.OAuth2.Types.pas"/>
         <BuildConfiguration Include="Base">
