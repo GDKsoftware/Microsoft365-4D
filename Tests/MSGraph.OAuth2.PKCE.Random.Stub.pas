@@ -9,7 +9,7 @@ uses
 type
   TOAuth2PKCERandomStub = class(TOAuth2PKCERandom)
   protected
-    function GenerateRandomBytes(const Count: Integer): TBytes; override;
+    procedure FillRandomBytes(const Buffer: TBytes); override;
   end;
 
 implementation
@@ -17,13 +17,11 @@ implementation
 const
   ByteValueCount = 256;
 
-function TOAuth2PKCERandomStub.GenerateRandomBytes(const Count: Integer): TBytes;
+procedure TOAuth2PKCERandomStub.FillRandomBytes(const Buffer: TBytes);
 begin
-  SetLength(Result, Count);
-
-  for var Index := 0 to Count - 1 do
+  for var Index := 0 to High(Buffer) do
   begin
-    Result[Index] := Index mod ByteValueCount;
+    Buffer[Index] := Index mod ByteValueCount;
   end;
 end;
 

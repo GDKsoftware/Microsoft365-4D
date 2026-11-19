@@ -17,6 +17,8 @@ type
     procedure Generate_GivenRandom_TakesVerifierAndStateFromThatRandom;
     [Test]
     procedure Generate_GivenRandom_ChallengeBelongsToVerifier;
+    [Test]
+    procedure Generate_NilRandomSource_RaisesOAuth2Exception;
   end;
 
 implementation
@@ -38,9 +40,9 @@ end;
 
 procedure TOAuth2PKCETests.Generate_GivenRandom_TakesVerifierAndStateFromThatRandom;
 begin
-  const Random: IOAuth2PKCERandom = TOAuth2PKCERandomStub.Create;
+  const RandomSource: IOAuth2PKCERandom = TOAuth2PKCERandomStub.Create;
 
-  const Session = TOAuth2PKCE.Generate(Random);
+  const Session = TOAuth2PKCE.Generate(RandomSource);
 
   Assert.AreEqual(128, Session.CodeVerifier.Length);
   Assert.StartsWith('AAECAwQF', Session.CodeVerifier);
@@ -49,12 +51,22 @@ end;
 
 procedure TOAuth2PKCETests.Generate_GivenRandom_ChallengeBelongsToVerifier;
 begin
-  const Random: IOAuth2PKCERandom = TOAuth2PKCERandomStub.Create;
+  const RandomSource: IOAuth2PKCERandom = TOAuth2PKCERandomStub.Create;
 
-  const Session           = TOAuth2PKCE.Generate(Random);
+  const Session           = TOAuth2PKCE.Generate(RandomSource);
   const ExpectedChallenge = TOAuth2PKCE.GenerateCodeChallenge(Session.CodeVerifier);
 
   Assert.AreEqual(ExpectedChallenge, Session.CodeChallenge);
+end;
+
+procedure TOAuth2PKCETests.Generate_NilRandomSource_RaisesOAuth2Exception;
+begin
+  Assert.WillRaise(
+    procedure
+    begin
+      TOAuth2PKCE.Generate(nil);
+    end,
+    EOAuth2Exception);
 end;
 
 end.

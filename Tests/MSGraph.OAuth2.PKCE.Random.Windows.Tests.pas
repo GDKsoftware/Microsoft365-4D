@@ -18,7 +18,6 @@ type
   private
     FRandom: IOAuth2PKCERandom;
 
-    function ContainsOnly(const Value: string; const Allowed: TSysCharSet): Boolean;
     procedure PlantLibrary(const PlantedPath: string);
 
   public
@@ -56,13 +55,13 @@ type
 implementation
 
 uses
+  MSGraph.OAuth2.PKCE.Characters,
   System.IOUtils,
   MSGraph.OAuth2.Types,
   MSGraph.OAuth2.PKCE.Random.Windows,
   MSGraph.OAuth2.PKCE.Random.Windows.Stub;
 
 const
-  UrlSafeCharacters   = ['A'..'Z', 'a'..'z', '0'..'9', '-', '_'];
   PlantedLibraryName  = 'MSGraph.Planted.dll';
   SystemLibraryFolder = 'System32';
   SystemBCryptName    = 'bcrypt.dll';
@@ -88,7 +87,7 @@ procedure TOAuth2PKCERandomWindowsTests.GenerateSecureRandomString_Generated_Con
 begin
   const Generated = FRandom.GenerateSecureRandomString(128);
 
-  Assert.IsTrue(ContainsOnly(Generated, UrlSafeCharacters), Generated);
+  Assert.IsTrue(TPKCECharacters.ContainsOnly(Generated, TPKCECharacters.UrlSafe), Generated);
 end;
 
 procedure TOAuth2PKCERandomWindowsTests.GenerateSecureRandomString_TwoCalls_ReturnDifferentValues;
@@ -168,17 +167,6 @@ begin
   const SystemBCryptPath = TPath.Combine(SystemDirectory, SystemBCryptName);
 
   TFile.Copy(SystemBCryptPath, PlantedPath, True);
-end;
-
-function TOAuth2PKCERandomWindowsTests.ContainsOnly(const Value: string; const Allowed: TSysCharSet): Boolean;
-begin
-  for var Character in Value do
-  begin
-    if not CharInSet(Character, Allowed) then
-      Exit(False);
-  end;
-
-  Result := True;
 end;
 
 end.

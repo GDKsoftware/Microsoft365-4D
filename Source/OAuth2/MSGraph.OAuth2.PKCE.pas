@@ -15,10 +15,11 @@ type
       StateTimeoutMinutes = 5;
 
     class function CreateRandom: IOAuth2PKCERandom; static;
+    class procedure GuardRandomSourceAssigned(const RandomSource: IOAuth2PKCERandom); static;
 
   public
     class function Generate: TPKCESession; overload;
-    class function Generate(const Random: IOAuth2PKCERandom): TPKCESession; overload;
+    class function Generate(const RandomSource: IOAuth2PKCERandom): TPKCESession; overload;
     class function GenerateCodeChallenge(const CodeVerifier: string): string; static;
   end;
 
@@ -49,12 +50,23 @@ begin
   {$ENDIF}
 end;
 
-class function TOAuth2PKCE.Generate(const Random: IOAuth2PKCERandom): TPKCESession;
+class function TOAuth2PKCE.Generate(const RandomSource: IOAuth2PKCERandom): TPKCESession;
 begin
-  Result.CodeVerifier := Random.GenerateSecureRandomString(CodeVerifierLength);
+  GuardRandomSourceAssigned(RandomSource);
+
+  Result.CodeVerifier := RandomSource.GenerateSecureRandomString(CodeVerifierLength);
   Result.CodeChallenge := GenerateCodeChallenge(Result.CodeVerifier);
-  Result.State := Random.GenerateNonce;
+  Result.State := RandomSource.GenerateNonce;
   Result.ExpiresAt := Now + (StateTimeoutMinutes / (24 * 60));
+end;
+
+class procedure TOAuth2PKCE.GuardRandomSourceAssigned(const RandomSource: IOAuth2PKCERandom);
+begin
+  const IsAssigned = Assigned(RandomSource);
+  if IsAssigned then
+    Exit;
+
+  raise EOAuth2Exception.Create('A random source is required to generate a PKCE session');
 end;
 
 class function TOAuth2PKCE.GenerateCodeChallenge(const CodeVerifier: string): string;

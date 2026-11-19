@@ -17,7 +17,6 @@ type
                                   const BufferSize: Cardinal;
                                   const Flags: Cardinal): Integer; stdcall;
 
-    procedure FillRandomBytes(const Buffer: TBytes);
     function LoadBCryptLibrary: HMODULE;
     procedure GuardLibraryLoaded(const Module: HMODULE; const LibraryName: string);
     function GetBCryptGenRandom(const Module: HMODULE): TBCryptGenRandom;
@@ -25,7 +24,7 @@ type
     procedure GuardStatus(const Status: Integer);
 
   protected
-    function GenerateRandomBytes(const Count: Integer): TBytes; override;
+    procedure FillRandomBytes(const Buffer: TBytes); override;
     function BCryptLibraryName: string; virtual;
   end;
 
@@ -45,17 +44,6 @@ const
   BCryptUseSystemPreferredRng = $00000002;
   LoadLibrarySearchSystem32   = $00000800;
   StatusSuccess               = 0;
-
-function TOAuth2PKCERandomWindows.GenerateRandomBytes(const Count: Integer): TBytes;
-begin
-  SetLength(Result, Count);
-
-  const IsEmpty = (Count = 0);
-  if IsEmpty then
-    Exit;
-
-  FillRandomBytes(Result);
-end;
 
 procedure TOAuth2PKCERandomWindows.FillRandomBytes(const Buffer: TBytes);
 begin

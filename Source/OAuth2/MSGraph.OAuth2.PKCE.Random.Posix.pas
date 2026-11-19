@@ -10,11 +10,8 @@ uses
 
 type
   TOAuth2PKCERandomPosix = class(TOAuth2PKCERandom)
-  strict private
-    procedure FillRandomBytes(const Buffer: TBytes);
-
   protected
-    function GenerateRandomBytes(const Count: Integer): TBytes; override;
+    procedure FillRandomBytes(const Buffer: TBytes); override;
   end;
 
 {$ENDIF}
@@ -29,17 +26,6 @@ uses
 
 const
   RandomDevicePath = '/dev/urandom';
-
-function TOAuth2PKCERandomPosix.GenerateRandomBytes(const Count: Integer): TBytes;
-begin
-  SetLength(Result, Count);
-
-  const IsEmpty = (Count = 0);
-  if IsEmpty then
-    Exit;
-
-  FillRandomBytes(Result);
-end;
 
 procedure TOAuth2PKCERandomPosix.FillRandomBytes(const Buffer: TBytes);
 begin

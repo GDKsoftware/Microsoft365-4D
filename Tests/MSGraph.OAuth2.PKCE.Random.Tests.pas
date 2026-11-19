@@ -14,7 +14,6 @@ type
   private
     FRandom: IOAuth2PKCERandom;
 
-    function ContainsOnly(const Value: string; const Allowed: TSysCharSet): Boolean;
 
   public
     [Setup]
@@ -41,10 +40,10 @@ type
 implementation
 
 uses
+  MSGraph.OAuth2.PKCE.Characters,
   MSGraph.OAuth2.PKCE.Random.Stub;
 
 const
-  UrlSafeCharacters = ['A'..'Z', 'a'..'z', '0'..'9', '-', '_'];
   HexCharacters     = ['0'..'9', 'A'..'F', 'a'..'f'];
 
 procedure TOAuth2PKCERandomTests.Setup;
@@ -68,7 +67,7 @@ procedure TOAuth2PKCERandomTests.GenerateSecureRandomString_Generated_ContainsOn
 begin
   const Generated = FRandom.GenerateSecureRandomString(128);
 
-  Assert.IsTrue(ContainsOnly(Generated, UrlSafeCharacters), Generated);
+  Assert.IsTrue(TPKCECharacters.ContainsOnly(Generated, TPKCECharacters.UrlSafe), Generated);
 end;
 
 procedure TOAuth2PKCERandomTests.GenerateSecureRandomString_KnownBytes_ReturnsTheirBase64Url;
@@ -83,7 +82,7 @@ begin
   const Nonce = FRandom.GenerateNonce;
 
   Assert.AreEqual(32, Nonce.Length);
-  Assert.IsTrue(ContainsOnly(Nonce, HexCharacters), Nonce);
+  Assert.IsTrue(TPKCECharacters.ContainsOnly(Nonce, HexCharacters), Nonce);
 end;
 
 procedure TOAuth2PKCERandomTests.GenerateNonce_KnownBytes_ReturnsTheirHex;
@@ -91,17 +90,6 @@ begin
   const Nonce = FRandom.GenerateNonce;
 
   Assert.AreEqual('000102030405060708090a0b0c0d0e0f', Nonce);
-end;
-
-function TOAuth2PKCERandomTests.ContainsOnly(const Value: string; const Allowed: TSysCharSet): Boolean;
-begin
-  for var Character in Value do
-  begin
-    if not CharInSet(Character, Allowed) then
-      Exit(False);
-  end;
-
-  Result := True;
 end;
 
 end.
