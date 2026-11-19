@@ -64,6 +64,22 @@ type
     procedure GetEvent_ResponseWithoutSensitivity_DefaultsToNormal;
     [Test]
     procedure ListEvents_SelectsSensitivity;
+    [Test]
+    procedure CreateEvent_OnlineMeeting_PostsTeamsProvider;
+    [Test]
+    procedure CreateEvent_WithoutOnlineMeetingArgument_OmitsOnlineMeeting;
+    [Test]
+    procedure CreateEvent_OnlineMeetingResponse_ReturnsJoinUrl;
+    [Test]
+    procedure GetEvent_OnlineMeetingResponse_ParsesJoinUrl;
+    [Test]
+    procedure ChangeEvent_AttendeesOnly_PatchesOnlyAttendees;
+    [Test]
+    procedure ChangeEvent_NewPeriod_PatchesStartAndEnd;
+    [Test]
+    procedure ChangeEvent_OnlineMeeting_PatchesTeamsProvider;
+    [Test]
+    procedure ChangeEvent_NoChanges_RaisesWithoutRequest;
   end;
 
 implementation
@@ -87,6 +103,24 @@ const
   MixedCaseValue = 'Private';
   SingleRequest = 1;
   FirstRequest = 0;
+  NoRequests = 0;
+  PatchMethod = 'PATCH';
+  JoinUrl = 'https://teams.microsoft.com/l/meetup-join/unit-test';
+  OnlineEventResponse = '{"id":"AAMkEvent","isOnlineMeeting":true,"onlineMeeting":{"joinUrl":"' + JoinUrl + '"}}';
+  IsOnlineMeetingKey = 'isOnlineMeeting';
+  OnlineMeetingProviderKey = 'onlineMeetingProvider';
+  TeamsProvider = 'teamsForBusiness';
+  AttendeesKey = 'attendees';
+  SubjectKey = 'subject';
+  StartKey = 'start';
+  EndKey = 'end';
+  DateTimeKey = 'dateTime';
+  AttendeeAddress = 'attendee@example.com';
+  EventStartIso = '2026-09-20T09:00:00';
+  EventEndIso = '2026-09-20T09:30:00';
+  AsOnlineMeeting = True;
+  SingleField = 1;
+  SingleAttendee = 1;
 
 procedure TEventSensitivityTests.FromGraphValue_KnownValue_RoundTripsThroughGraphValue(const Value: string);
 begin
@@ -171,7 +205,7 @@ begin
                               DefaultCalendarTimeZone, TEventSensitivity.Confidential);
 
   const Patched = FFake.RequestAt(FirstRequest);
-  Assert.AreEqual('PATCH', Patched.Method);
+  Assert.AreEqual(PatchMethod, Patched.Method);
 
   const Body = PostedEventJson;
   try
@@ -210,6 +244,144 @@ begin
   const Requested = FFake.RequestAt(FirstRequest);
   const SelectsSensitivity = Requested.Url.Contains(SensitivityKey);
   Assert.IsTrue(SelectsSensitivity, Format('the calendar view must select sensitivity: %s', [Requested.Url]));
+end;
+
+procedure TCalendarClientTests.CreateEvent_OnlineMeeting_PostsTeamsProvider;
+begin
+  FFake.EnqueueResponse(201, OnlineEventResponse);
+
+  FCalendarClient.CreateEvent(EventSubject, FEventStart, FEventEnd, '', '', [], False,
+                              DefaultCalendarTimeZone, TEventSensitivity.Normal, AsOnlineMeeting);
+
+  const Body = PostedEventJson;
+  try
+    const IsOnlineMeeting = TGraphJson.GetBool(Body, IsOnlineMeetingKey);
+    const Provider = TGraphJson.GetString(Body, OnlineMeetingProviderKey);
+
+    Assert.IsTrue(IsOnlineMeeting, 'an online meeting must post isOnlineMeeting');
+    Assert.AreEqual(TeamsProvider, Provider);
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TCalendarClientTests.CreateEvent_WithoutOnlineMeetingArgument_OmitsOnlineMeeting;
+begin
+  FFake.EnqueueResponse(201, EventCreatedResponse);
+
+  FCalendarClient.CreateEvent(EventSubject, FEventStart, FEventEnd, '', '', [], False);
+
+  const Body = PostedEventJson;
+  try
+    const HasOnlineMeeting = Assigned(Body.Values[IsOnlineMeetingKey]);
+    const HasProvider = Assigned(Body.Values[OnlineMeetingProviderKey]);
+
+    Assert.IsFalse(HasOnlineMeeting, 'a plain event must not post isOnlineMeeting');
+    Assert.IsFalse(HasProvider, 'a plain event must not post an online meeting provider');
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TCalendarClientTests.CreateEvent_OnlineMeetingResponse_ReturnsJoinUrl;
+begin
+  FFake.EnqueueResponse(201, OnlineEventResponse);
+
+  const Created = FCalendarClient.CreateEvent(EventSubject, FEventStart, FEventEnd, '', '', [], False,
+                                              DefaultCalendarTimeZone, TEventSensitivity.Normal, AsOnlineMeeting);
+
+  Assert.AreEqual(JoinUrl, Created.OnlineMeetingUrl);
+end;
+
+procedure TCalendarClientTests.GetEvent_OnlineMeetingResponse_ParsesJoinUrl;
+begin
+  FFake.EnqueueResponse(200, OnlineEventResponse);
+
+  const CalendarEvent = FCalendarClient.GetEvent(EventId);
+
+  Assert.IsTrue(CalendarEvent.IsOnlineMeeting, 'the event must be marked as an online meeting');
+  Assert.AreEqual(JoinUrl, CalendarEvent.OnlineMeetingUrl);
+end;
+
+procedure TCalendarClientTests.ChangeEvent_AttendeesOnly_PatchesOnlyAttendees;
+begin
+  FFake.EnqueueResponse(200, EventCreatedResponse);
+  var Changes := Default(TEventChanges);
+  Changes.Attendees := [AttendeeAddress];
+
+  FCalendarClient.ChangeEvent(EventId, Changes);
+
+  const Patched = FFake.RequestAt(FirstRequest);
+  Assert.AreEqual(PatchMethod, Patched.Method);
+
+  const Body = PostedEventJson;
+  try
+    const Attendees = TGraphJson.GetArray(Body, AttendeesKey);
+
+    Assert.AreEqual(SingleField, Body.Count, Format('only the attendees may be patched: %s', [Patched.Body]));
+    Assert.IsNotNull(Attendees, 'the patch must carry the attendees');
+    Assert.AreEqual(SingleAttendee, Attendees.Count);
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TCalendarClientTests.ChangeEvent_NewPeriod_PatchesStartAndEnd;
+begin
+  FFake.EnqueueResponse(200, EventCreatedResponse);
+  var Changes := Default(TEventChanges);
+  Changes.StartDateTime := FEventStart;
+  Changes.EndDateTime   := FEventEnd;
+
+  FCalendarClient.ChangeEvent(EventId, Changes);
+
+  const Body = PostedEventJson;
+  try
+    const StartObj = TGraphJson.GetObject(Body, StartKey);
+    const EndObj = TGraphJson.GetObject(Body, EndKey);
+    const PatchedStart = TGraphJson.GetString(StartObj, DateTimeKey);
+    const PatchedEnd = TGraphJson.GetString(EndObj, DateTimeKey);
+    const HasSubject = Assigned(Body.Values[SubjectKey]);
+
+    Assert.AreEqual(EventStartIso, PatchedStart);
+    Assert.AreEqual(EventEndIso, PatchedEnd);
+    Assert.IsFalse(HasSubject, 'an unchanged subject must not be patched');
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TCalendarClientTests.ChangeEvent_OnlineMeeting_PatchesTeamsProvider;
+begin
+  FFake.EnqueueResponse(200, OnlineEventResponse);
+  var Changes := Default(TEventChanges);
+  Changes.IsOnlineMeeting := AsOnlineMeeting;
+
+  const Changed = FCalendarClient.ChangeEvent(EventId, Changes);
+
+  const Body = PostedEventJson;
+  try
+    const Provider = TGraphJson.GetString(Body, OnlineMeetingProviderKey);
+
+    Assert.AreEqual(TeamsProvider, Provider);
+    Assert.AreEqual(JoinUrl, Changed.OnlineMeetingUrl);
+  finally
+    Body.Free;
+  end;
+end;
+
+procedure TCalendarClientTests.ChangeEvent_NoChanges_RaisesWithoutRequest;
+begin
+  const NoChanges = Default(TEventChanges);
+
+  Assert.WillRaise(
+    procedure
+    begin
+      FCalendarClient.ChangeEvent(EventId, NoChanges);
+    end,
+    EArgumentException);
+
+  Assert.AreEqual(NoRequests, FFake.RequestCount, 'an empty change must not reach Graph');
 end;
 
 function TCalendarClientTests.CreateEventJson(const Sensitivity: TEventSensitivity): TJSONObject;

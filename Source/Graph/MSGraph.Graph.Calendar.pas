@@ -17,13 +17,30 @@ type
 
     const
       SensitivityKey = 'sensitivity';
+      SubjectKey = 'subject';
+      StartKey = 'start';
+      EndKey = 'end';
+      LocationKey = 'location';
+      DisplayNameKey = 'displayName';
+      AttendeesKey = 'attendees';
+      IsOnlineMeetingKey = 'isOnlineMeeting';
+      OnlineMeetingKey = 'onlineMeeting';
+      OnlineMeetingProviderKey = 'onlineMeetingProvider';
+      JoinUrlKey = 'joinUrl';
+      TeamsProvider = 'teamsForBusiness';
+      NoEventChanges = 'The event changes are empty: set at least one field';
 
     function DateTimeToISO8601(const Value: TDateTime): string;
+    function DateTimeTimeZone(const Value: TDateTime; const TimeZone: string): TJSONObject;
+    function LocationObject(const DisplayName: string): TJSONObject;
     function BuildAttendeesArray(const Attendees: TArray<string>): TJSONArray;
+    procedure AddOnlineMeeting(const EventObj: TJSONObject);
     function BuildEventBody(const Subject: string; const StartDateTime: TDateTime;
       const EndDateTime: TDateTime; const Location: string; const Body: string;
       const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
-      const Sensitivity: TEventSensitivity): TJSONObject;
+      const Sensitivity: TEventSensitivity; const IsOnlineMeeting: Boolean): TJSONObject;
+    function BuildChangesBody(const Changes: TEventChanges): TJSONObject;
+    function PatchEvent(const EventId: string; const EventObj: TJSONObject): TCreateEventResult;
 
     function EndpointCalendarView: string;
     function EndpointEvents: string;
@@ -32,6 +49,8 @@ type
     class function ParseAttendee(const AttendeeObj: TJSONObject): TAttendee; static;
     class function ParseAttendees(const EventObj: TJSONObject): TArray<TAttendee>; static;
     class function ParseEvent(const EventObj: TJSONObject): TCalendarEvent; static;
+    class function ParseOnlineMeetingUrl(const EventObj: TJSONObject): string; static;
+    class function ParseEventResult(const Response: TJSONObject): TCreateEventResult; static;
     class function ParseScheduleItem(const ItemObj: TJSONObject): TScheduleItemEntry; static;
     class function ParseScheduleResult(const ScheduleObj: TJSONObject): TScheduleResult; static;
 
@@ -57,12 +76,14 @@ type
       const EndDateTime: TDateTime; const Location: string; const Body: string;
       const Attendees: TArray<string>; const IsAllDay: Boolean;
       const TimeZone: string = DefaultCalendarTimeZone;
-      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal;
+      const IsOnlineMeeting: Boolean = False): TCreateEventResult;
     function UpdateEvent(const EventId: string; const Subject: string;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const Location: string; const Body: string; const Attendees: TArray<string>;
       const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone;
       const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
+    function ChangeEvent(const EventId: string; const Changes: TEventChanges): TCreateEventResult;
     function DeleteEvent(const EventId: string): Boolean;
     function GetScheduleAvailability(const Schedules: TArray<string>;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
@@ -125,6 +146,25 @@ begin
   Result := FormatDateTime('yyyy-mm-dd"T"HH:nn:ss', Value);
 end;
 
+function TCalendarClient.DateTimeTimeZone(const Value: TDateTime; const TimeZone: string): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair('dateTime', DateTimeToISO8601(Value));
+  Result.AddPair('timeZone', TimeZone);
+end;
+
+function TCalendarClient.LocationObject(const DisplayName: string): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+  Result.AddPair(DisplayNameKey, DisplayName);
+end;
+
+procedure TCalendarClient.AddOnlineMeeting(const EventObj: TJSONObject);
+begin
+  EventObj.AddPair(IsOnlineMeetingKey, TJSONBool.Create(True));
+  EventObj.AddPair(OnlineMeetingProviderKey, TeamsProvider);
+end;
+
 function TCalendarClient.BuildAttendeesArray(const Attendees: TArray<string>): TJSONArray;
 begin
   Result := TJSONArray.Create;
@@ -145,20 +185,12 @@ end;
 function TCalendarClient.BuildEventBody(const Subject: string; const StartDateTime: TDateTime;
   const EndDateTime: TDateTime; const Location: string; const Body: string;
   const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
-  const Sensitivity: TEventSensitivity): TJSONObject;
+  const Sensitivity: TEventSensitivity; const IsOnlineMeeting: Boolean): TJSONObject;
 begin
   Result := TJSONObject.Create;
-  Result.AddPair('subject', Subject);
-
-  var StartObj := TJSONObject.Create;
-  StartObj.AddPair('dateTime', DateTimeToISO8601(StartDateTime));
-  StartObj.AddPair('timeZone', TimeZone);
-  Result.AddPair('start', StartObj);
-
-  var EndObj := TJSONObject.Create;
-  EndObj.AddPair('dateTime', DateTimeToISO8601(EndDateTime));
-  EndObj.AddPair('timeZone', TimeZone);
-  Result.AddPair('end', EndObj);
+  Result.AddPair(SubjectKey, Subject);
+  Result.AddPair(StartKey, DateTimeTimeZone(StartDateTime, TimeZone));
+  Result.AddPair(EndKey, DateTimeTimeZone(EndDateTime, TimeZone));
 
   Result.AddPair('isAllDay', TJSONBool.Create(IsAllDay));
 
@@ -168,11 +200,7 @@ begin
     Result.AddPair(SensitivityKey, SensitivityValue);
 
   if not Location.Trim.IsEmpty then
-  begin
-    var LocationObj := TJSONObject.Create;
-    LocationObj.AddPair('displayName', Location);
-    Result.AddPair('location', LocationObj);
-  end;
+    Result.AddPair(LocationKey, LocationObject(Location));
 
   if not Body.Trim.IsEmpty then
   begin
@@ -183,7 +211,40 @@ begin
   end;
 
   if Length(Attendees) > 0 then
-    Result.AddPair('attendees', BuildAttendeesArray(Attendees));
+    Result.AddPair(AttendeesKey, BuildAttendeesArray(Attendees));
+
+  if IsOnlineMeeting then
+    AddOnlineMeeting(Result);
+end;
+
+function TCalendarClient.BuildChangesBody(const Changes: TEventChanges): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+
+  if not Changes.Subject.Trim.IsEmpty then
+    Result.AddPair(SubjectKey, Changes.Subject);
+
+  var TimeZone := Changes.TimeZone.Trim;
+  if TimeZone.IsEmpty then
+    TimeZone := DefaultCalendarTimeZone;
+
+  const HasStart = (Changes.StartDateTime <> 0);
+  if HasStart then
+    Result.AddPair(StartKey, DateTimeTimeZone(Changes.StartDateTime, TimeZone));
+
+  const HasEnd = (Changes.EndDateTime <> 0);
+  if HasEnd then
+    Result.AddPair(EndKey, DateTimeTimeZone(Changes.EndDateTime, TimeZone));
+
+  if not Changes.Location.Trim.IsEmpty then
+    Result.AddPair(LocationKey, LocationObject(Changes.Location));
+
+  const HasAttendees = (Length(Changes.Attendees) > 0);
+  if HasAttendees then
+    Result.AddPair(AttendeesKey, BuildAttendeesArray(Changes.Attendees));
+
+  if Changes.IsOnlineMeeting then
+    AddOnlineMeeting(Result);
 end;
 
 class function TCalendarClient.ParseAttendee(const AttendeeObj: TJSONObject): TAttendee;
@@ -207,7 +268,7 @@ end;
 class function TCalendarClient.ParseAttendees(const EventObj: TJSONObject): TArray<TAttendee>;
 begin
   Result := nil;
-  var Arr := TGraphJson.GetArray(EventObj, 'attendees');
+  var Arr := TGraphJson.GetArray(EventObj, AttendeesKey);
   if not Assigned(Arr) then
     Exit;
   SetLength(Result, Arr.Count);
@@ -222,7 +283,7 @@ begin
     Exit;
 
   Result.Id := TGraphJson.GetString(EventObj, 'id');
-  Result.Subject := TGraphJson.GetString(EventObj, 'subject');
+  Result.Subject := TGraphJson.GetString(EventObj, SubjectKey);
   Result.IsAllDay := TGraphJson.GetBool(EventObj, 'isAllDay');
   Result.IsCancelled := TGraphJson.GetBool(EventObj, 'isCancelled');
   Result.WebLink := TGraphJson.GetString(EventObj, 'webLink');
@@ -232,17 +293,17 @@ begin
   const SensitivityValue = TGraphJson.GetString(EventObj, SensitivityKey);
   Result.Sensitivity := TEventSensitivity.FromGraphValue(SensitivityValue);
 
-  var StartObj := TGraphJson.GetObject(EventObj, 'start');
+  var StartObj := TGraphJson.GetObject(EventObj, StartKey);
   if Assigned(StartObj) then
     Result.StartDateTime := TGraphJson.GetString(StartObj, 'dateTime');
 
-  var EndObj := TGraphJson.GetObject(EventObj, 'end');
+  var EndObj := TGraphJson.GetObject(EventObj, EndKey);
   if Assigned(EndObj) then
     Result.EndDateTime := TGraphJson.GetString(EndObj, 'dateTime');
 
-  var LocationObj := TGraphJson.GetObject(EventObj, 'location');
+  var LocationObj := TGraphJson.GetObject(EventObj, LocationKey);
   if Assigned(LocationObj) then
-    Result.Location := TGraphJson.GetString(LocationObj, 'displayName');
+    Result.Location := TGraphJson.GetString(LocationObj, DisplayNameKey);
 
   var OrganizerObj := TGraphJson.GetObject(EventObj, 'organizer');
   if Assigned(OrganizerObj) then
@@ -257,6 +318,26 @@ begin
     Result.Body := TGraphJson.GetString(BodyObj, 'content');
 
   Result.Attendees := ParseAttendees(EventObj);
+
+  Result.IsOnlineMeeting  := TGraphJson.GetBool(EventObj, IsOnlineMeetingKey);
+  Result.OnlineMeetingUrl := ParseOnlineMeetingUrl(EventObj);
+end;
+
+class function TCalendarClient.ParseOnlineMeetingUrl(const EventObj: TJSONObject): string;
+begin
+  Result := '';
+
+  const OnlineMeeting = TGraphJson.GetObject(EventObj, OnlineMeetingKey);
+  if Assigned(OnlineMeeting) then
+    Result := TGraphJson.GetString(OnlineMeeting, JoinUrlKey);
+end;
+
+class function TCalendarClient.ParseEventResult(const Response: TJSONObject): TCreateEventResult;
+begin
+  Result := Default(TCreateEventResult);
+  Result.Id               := TGraphJson.GetString(Response, 'id');
+  Result.WebLink          := TGraphJson.GetString(Response, 'webLink');
+  Result.OnlineMeetingUrl := ParseOnlineMeetingUrl(Response);
 end;
 
 class function TCalendarClient.ParseScheduleItem(const ItemObj: TJSONObject): TScheduleItemEntry;
@@ -395,7 +476,7 @@ begin
   var EndISO := DateTimeToISO8601(EndDateTime);
 
   var QueryParams := Format(
-    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,bodyPreview,sensitivity',
+    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,bodyPreview,sensitivity,isOnlineMeeting,onlineMeeting',
     [TNetEncoding.URL.Encode(StartISO), TNetEncoding.URL.Encode(EndISO), ActualTop]);
 
   var PreferTokens: TArray<string> := nil;
@@ -420,7 +501,7 @@ begin
   var EndISO := DateTimeToISO8601(EndDateTime);
 
   var QueryParams := Format(
-    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview,sensitivity',
+    'startDateTime=%s&endDateTime=%s&$top=%d&$orderby=start/dateTime&$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview,sensitivity,isOnlineMeeting,onlineMeeting',
     [TNetEncoding.URL.Encode(StartISO), TNetEncoding.URL.Encode(EndISO), GraphMaxPageSize]);
 
   var PreferTokens := TList<string>.Create;
@@ -464,7 +545,7 @@ end;
 function TCalendarClient.GetEvent(const EventId: string): TCalendarEvent;
 begin
   var Response := FGraphClient.Get(EndpointEvents + '/' + EventId,
-    '$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview,recurrence,sensitivity,showAs');
+    '$select=id,subject,start,end,location,organizer,attendees,isAllDay,isCancelled,webLink,body,bodyPreview,recurrence,sensitivity,showAs,isOnlineMeeting,onlineMeeting');
   try
     if TGraphJson.HasError(Response) then
       raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
@@ -478,19 +559,17 @@ end;
 function TCalendarClient.CreateEvent(const Subject: string; const StartDateTime: TDateTime;
   const EndDateTime: TDateTime; const Location: string; const Body: string;
   const Attendees: TArray<string>; const IsAllDay: Boolean; const TimeZone: string;
-  const Sensitivity: TEventSensitivity): TCreateEventResult;
+  const Sensitivity: TEventSensitivity; const IsOnlineMeeting: Boolean): TCreateEventResult;
 begin
-  Result := Default(TCreateEventResult);
   var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone,
-                                 Sensitivity);
+                                 Sensitivity, IsOnlineMeeting);
   try
     var Response := FGraphClient.Post(EndpointEvents, EventObj.ToJSON);
     try
       if TGraphJson.HasError(Response) then
         raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
 
-      Result.Id := TGraphJson.GetString(Response, 'id');
-      Result.WebLink := TGraphJson.GetString(Response, 'webLink');
+      Result := ParseEventResult(Response);
     finally
       Response.Free;
     end;
@@ -505,22 +584,41 @@ function TCalendarClient.UpdateEvent(const EventId: string; const Subject: strin
   const IsAllDay: Boolean; const TimeZone: string;
   const Sensitivity: TEventSensitivity): TCreateEventResult;
 begin
-  Result := Default(TCreateEventResult);
+  const NotOnlineMeeting = False;
   var EventObj := BuildEventBody(Subject, StartDateTime, EndDateTime, Location, Body, Attendees, IsAllDay, TimeZone,
-                                 Sensitivity);
+                                 Sensitivity, NotOnlineMeeting);
   try
-    var Response := FGraphClient.Patch(EndpointEvents + '/' + EventId, EventObj.ToJSON);
-    try
-      if TGraphJson.HasError(Response) then
-        raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
-
-      Result.Id := TGraphJson.GetString(Response, 'id');
-      Result.WebLink := TGraphJson.GetString(Response, 'webLink');
-    finally
-      Response.Free;
-    end;
+    Result := PatchEvent(EventId, EventObj);
   finally
     EventObj.Free;
+  end;
+end;
+
+function TCalendarClient.ChangeEvent(const EventId: string; const Changes: TEventChanges): TCreateEventResult;
+begin
+  const EventObj = BuildChangesBody(Changes);
+  try
+    const HasChanges = (EventObj.Count > 0);
+    if not HasChanges then
+      raise EArgumentException.Create(NoEventChanges);
+
+    Result := PatchEvent(EventId, EventObj);
+  finally
+    EventObj.Free;
+  end;
+end;
+
+function TCalendarClient.PatchEvent(const EventId: string; const EventObj: TJSONObject): TCreateEventResult;
+begin
+  const Endpoint = Format('%s/%s', [EndpointEvents, EventId]);
+  const Response = FGraphClient.Patch(Endpoint, EventObj.ToJSON);
+  try
+    if TGraphJson.HasError(Response) then
+      raise EGraphApiException.Create(TGraphJson.GetErrorMessage(Response));
+
+    Result := ParseEventResult(Response);
+  finally
+    Response.Free;
   end;
 end;
 

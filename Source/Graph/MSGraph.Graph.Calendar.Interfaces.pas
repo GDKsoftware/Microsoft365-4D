@@ -21,12 +21,14 @@ type
       const EndDateTime: TDateTime; const Location: string; const Body: string;
       const Attendees: TArray<string>; const IsAllDay: Boolean;
       const TimeZone: string = DefaultCalendarTimeZone;
-      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
+      const Sensitivity: TEventSensitivity = TEventSensitivity.Normal;
+      const IsOnlineMeeting: Boolean = False): TCreateEventResult;
     function UpdateEvent(const EventId: string; const Subject: string;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
       const Location: string; const Body: string; const Attendees: TArray<string>;
       const IsAllDay: Boolean; const TimeZone: string = DefaultCalendarTimeZone;
       const Sensitivity: TEventSensitivity = TEventSensitivity.Normal): TCreateEventResult;
+    function ChangeEvent(const EventId: string; const Changes: TEventChanges): TCreateEventResult;
     function DeleteEvent(const EventId: string): Boolean;
     function GetScheduleAvailability(const Schedules: TArray<string>;
       const StartDateTime: TDateTime; const EndDateTime: TDateTime;
