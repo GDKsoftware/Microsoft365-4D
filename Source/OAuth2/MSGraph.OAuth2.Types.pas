@@ -11,6 +11,7 @@ type
 
   EMSGraphException = class(Exception);
   EOAuth2Exception = class(EMSGraphException);
+  EOAuth2RandomException = class(EOAuth2Exception);
   EGraphApiException = class(EMSGraphException);
   ETokenStoreException = class(EMSGraphException);
 

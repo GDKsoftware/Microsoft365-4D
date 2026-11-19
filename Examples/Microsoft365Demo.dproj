@@ -74,6 +74,8 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.Types.pas"/>
+        <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Interfaces.pas"/>
+        <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.pas"/>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.PKCE.pas"/>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.Client.pas"/>
         <DCCReference Include="..\Source\OAuth2\MSGraph.OAuth2.TokenStore.pas"/>

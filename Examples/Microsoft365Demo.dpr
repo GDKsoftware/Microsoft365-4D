@@ -5,6 +5,8 @@ program Microsoft365Demo;
 uses
   System.SysUtils,
   MSGraph.OAuth2.Types in '..\Source\OAuth2\MSGraph.OAuth2.Types.pas',
+  MSGraph.OAuth2.PKCE.Random.Interfaces in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.Interfaces.pas',
+  MSGraph.OAuth2.PKCE.Random in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.Random.pas',
   MSGraph.OAuth2.PKCE in '..\Source\OAuth2\MSGraph.OAuth2.PKCE.pas',
   MSGraph.OAuth2.Client in '..\Source\OAuth2\MSGraph.OAuth2.Client.pas',
   MSGraph.OAuth2.TokenStore in '..\Source\OAuth2\MSGraph.OAuth2.TokenStore.pas',
