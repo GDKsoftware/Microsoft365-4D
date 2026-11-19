@@ -1,3 +1,5 @@
+<img src="logo.png" align="right" width="128" alt="Microsoft365-4D logo"/>
+
 # Microsoft365-4D
 
 ![Delphi Version](https://img.shields.io/badge/Delphi-11%2C%2012%2C%2013-red)
