@@ -33,6 +33,8 @@ type
     WebLink: string;
     ShowAs: string;
     Sensitivity: TEventSensitivity;
+    IsOnlineMeeting: Boolean;
+    OnlineMeetingUrl: string;
   end;
 
   TScheduleItemEntry = record
@@ -51,6 +53,17 @@ type
   TCreateEventResult = record
     Id: string;
     WebLink: string;
+    OnlineMeetingUrl: string;
+  end;
+
+  TEventChanges = record
+    Subject: string;
+    StartDateTime: TDateTime;
+    EndDateTime: TDateTime;
+    TimeZone: string;
+    Location: string;
+    Attendees: TArray<string>;
+    IsOnlineMeeting: Boolean;
   end;
 
   {$SCOPEDENUMS ON}

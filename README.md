@@ -364,8 +364,9 @@ The three validation exceptions sit under `EGraphApiException` on purpose: they 
 |--------|-------------|
 | `ListEvents(Start, End, Top, Timezone)` | List calendar events in range |
 | `GetEvent(EventId)` | Get event details |
-| `CreateEvent(Subject, Start, End, Location, Body, Attendees, IsAllDay, TimeZone, Sensitivity)` | Create event; `Sensitivity` is a `TEventSensitivity` (`Normal`, `Personal`, `Private`, `Confidential`), default `Normal` |
+| `CreateEvent(Subject, Start, End, Location, Body, Attendees, IsAllDay, TimeZone, Sensitivity, IsOnlineMeeting)` | Create event; `Sensitivity` is a `TEventSensitivity` (`Normal`, `Personal`, `Private`, `Confidential`), default `Normal`. `IsOnlineMeeting` makes it a Teams meeting and returns the join link in `OnlineMeetingUrl`. Graph sends the invitations as soon as an event has attendees |
 | `UpdateEvent(EventId, Subject, Start, End, Location, Body, Attendees, IsAllDay, TimeZone, Sensitivity)` | Update event; a `Normal` sensitivity leaves the stored value untouched |
+| `ChangeEvent(EventId, Changes)` | Update only the fields set in a `TEventChanges` record (subject, start, end, location, attendees, online meeting); a field left at its default keeps its stored value. `Attendees` replaces the whole list |
 | `DeleteEvent(EventId)` | Delete event |
 | `GetScheduleAvailability(Schedules, Start, End, Timezone)` | Check availability |
 
