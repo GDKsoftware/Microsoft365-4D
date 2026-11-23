@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Pure Delphi library for Microsoft Graph API integration. Provides OAuth2 authentication with PKCE and typed clients for Mail, Calendar, Contacts, and SharePoint. No external dependencies beyond the Delphi RTL.
+Pure Delphi library for Microsoft Graph API integration. Provides OAuth2 authentication with PKCE and typed clients for Mail, Calendar, Contacts, and SharePoint.
 
 ## Table of Contents
 
@@ -30,7 +30,6 @@ Pure Delphi library for Microsoft Graph API integration. Provides OAuth2 authent
 - **Contacts** -search, create, update, delete contacts
 - **SharePoint** -browse sites, list/search drive items, get file content
 - **Drive** -read, write, move and delete files in OneDrive or a SharePoint library, with optimistic concurrency and delta queries
-- **Zero dependencies** -uses only `System.Net.HttpClient` (Delphi RTL)
 - **Pluggable logging** -`TLogProc` callback, no global logger
 - **Shared HTTP client** -all Graph clients can share a single `TGraphHttpClient`
 - **Shared mailbox support** -access shared/delegated mailboxes via `MailboxAddress` property
